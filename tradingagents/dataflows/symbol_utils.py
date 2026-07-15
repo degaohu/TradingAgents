@@ -80,6 +80,31 @@ _YAHOO_SAFE = re.compile(r"^[A-Za-z0-9._\-\^=]+$")
 _CRYPTO_QUOTES = ("USDT", "USDC", "USD")
 
 
+# A-share exchange suffixes (Yahoo Finance form): ``600519.SS`` → Shanghai,
+# ``000001.SZ`` → Shenzhen, ``430047.BJ`` → Beijing. The value is the prefix
+# Chinese platforms use — Xueqiu writes ``SH600519``, ``SZ000001``, ``BJ430047``.
+_A_SHARE_SUFFIXES = {".SS": "SH", ".SZ": "SZ", ".BJ": "BJ"}
+
+
+def a_share_code(raw: str) -> tuple[str, str] | None:
+    """Return ``(6-digit code, "SH"|"SZ"|"BJ")`` for an A-share ticker in Yahoo
+    form (``600519.SS`` / ``000001.SZ`` / ``430047.BJ``), else ``None``.
+
+    Purely syntactic — does not verify the code exists on the exchange. Bare
+    6-digit strings return ``None`` (would clash with US numeric-only symbols);
+    the caller must pass the exchange suffix explicitly.
+    """
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().upper()
+    for suffix, exch in _A_SHARE_SUFFIXES.items():
+        if s.endswith(suffix):
+            code = s[: -len(suffix)]
+            if len(code) == 6 and code.isdigit():
+                return code, exch
+    return None
+
+
 def crypto_base(raw: str) -> str | None:
     """Return the crypto base (e.g. ``BTC``) for a known USD/USDT/USDC-quoted
     crypto symbol in any form the pipeline may hold — ``BTC-USD``, ``BTCUSD``,
