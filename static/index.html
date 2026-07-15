@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingAgents Workstation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Workspace (Config + History) -->
+        <aside class="sidebar-config">
+            <div class="sidebar-header">
+                <span class="logo-icon">■</span>
+                <h1 class="logo-text">TRADING AGENTS</h1>
+                <div class="lang-selector">
+                    <button id="lang-btn-zh" class="lang-btn active" onclick="setLang('zh')">中文</button>
+                    <span class="lang-divider">|</span>
+                    <button id="lang-btn-en" class="lang-btn" onclick="setLang('en')">EN</button>
+                </div>
+                <div class="reading-controls" title="调节报告字号 / Adjust font size">
+                    <button class="rc-btn" data-scale="0.9">A−</button>
+                    <button class="rc-btn" data-scale="1" aria-current="true">A</button>
+                    <button class="rc-btn" data-scale="1.15">A+</button>
+                    <button class="rc-btn" data-scale="1.3">A++</button>
+                </div>
+            </div>
+
+            <form id="config-form" class="config-form">
+                <div class="form-group">
+                    <label for="ticker" data-zh="股票代码" data-en="Ticker Symbol">股票代码</label>
+                    <div class="ticker-combobox" id="ticker-combobox">
+                        <input type="text" id="ticker" name="ticker" value="TLRY" required
+                               placeholder="美股/A股/港股/ETF，如 AAPL、600519"
+                               autocomplete="off" spellcheck="false" role="combobox"
+                               aria-autocomplete="list" aria-expanded="false"
+                               aria-controls="ticker-suggest-list">
+                        <ul id="ticker-suggest-list" class="ticker-suggest" role="listbox" hidden></ul>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="trade_date" data-zh="分析日期" data-en="Analysis Date">分析日期</label>
+                    <input type="date" id="trade_date" name="trade_date" required>
+                </div>
+
+                <button type="submit" id="submit-btn" class="btn-primary">
+                    <span data-zh="开始分析" data-en="Run Analysis">开始分析</span>
+                    <div class="btn-glow"></div>
+                </button>
+            </form>
+
+            <!-- Watchlist / History Section -->
+            <div class="history-watchlist">
+                <div class="section-header-title">
+                    <span class="section-icon">▤</span>
+                    <span data-zh="历史分析记录" data-en="Recent Analyses">历史分析记录</span>
+                </div>
+                <div id="history-list" class="history-list">
+                    <!-- populated by localStorage in app.js -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workstation Viewport -->
+        <main class="main-content">
+            <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-label="Toggle Sidebar">◀</button>
+
+            <!-- Welcome View -->
+            <div id="welcome-view" class="center-view active">
+                <div class="welcome-box">
+                    <div class="pulse-icon">▰</div>
+                    <h2 data-zh="多智能体协同量化分析工作站" data-en="Multi-Agent Quantitative Workstation">多智能体协同量化分析工作站</h2>
+                    <p data-zh="在左侧输入资产代码与分析基准日。系统将并行调度技术、情绪、基本面与宏观新闻智能体，并通过多轮研究辩论与风险管理机制，为您输出决策方案。" data-en="Enter ticker and trade date on the left. The workstation will parallel-dispatch Technical, Sentiment, Fundamental, and News agents to construct institutional-grade trade decisions via multi-round debates.">在左侧输入资产代码与分析基准日。系统将并行调度技术、情绪、基本面与宏观新闻智能体，并通过多轮研究辩论与风险管理机制，为您输出决策方案。</p>
+                    <div class="feature-chips">
+                        <span class="chip" data-zh="技术分析" data-en="TECHNICAL">技术分析</span>
+                        <span class="chip" data-zh="市场情绪" data-en="SENTIMENT">市场情绪</span>
+                        <span class="chip" data-zh="宏观新闻" data-en="NEWS & MACRO">宏观新闻</span>
+                        <span class="chip" data-zh="财务基本面" data-en="FUNDAMENTALS">财务基本面</span>
+                        <span class="chip" data-zh="多轮辩论机制" data-en="MULTI-ROUND DEBATE">多轮辩论机制</span>
+                        <span class="chip" data-zh="风险审计顾问" data-en="RISK AUDIT">风险审计顾问</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading View (Bloomberg system bootloader styling) -->
+            <div id="loading-view" class="center-view">
+                <div class="loader-box">
+                    <h2 data-zh="多智能体协同分析中..." data-en="Running Multi-Agent Orchestration...">多智能体协同分析中...</h2>
+                    <p data-zh="正在调度各分析智能体，采集金融数据。大约需要 1-3 分钟，请耐心等待。" data-en="Dispatching agents & gathering financial metrics. This may take 1-3 minutes.">正在调度各分析智能体，采集金融数据。大约需要 1-3 分钟，请耐心等待。</p>
+
+                    <div id="loading-hud" class="loading-hud">
+                        <div class="hud-topline">
+                            <span class="hud-spinner" aria-hidden="true"></span>
+                            <span class="hud-stages">阶段 0/0</span>
+                            <span class="hud-sep">·</span>
+                            <span class="hud-elapsed">已用 0s</span>
+                            <span class="hud-sep">·</span>
+                            <span class="hud-eta">预计剩余 3m</span>
+                            <span class="hud-pct">0%</span>
+                        </div>
+                        <div class="hud-bar"><div class="hud-bar-fill"></div></div>
+                    </div>
+
+                    <div id="pipeline-list" class="pipeline-list">
+                        <div class="pipeline-header">
+                            <span class="col-stage" data-zh="分析阶段" data-en="STAGE">分析阶段</span>
+                            <span class="col-status" data-zh="状态" data-en="STATUS">状态</span>
+                            <span class="col-elapsed" data-zh="用时" data-en="ELAPSED">用时</span>
+                        </div>
+                        <div class="pipeline-body" id="pipeline-body"></div>
+                    </div>
+
+                    <div class="loading-actions">
+                        <button id="preview-results-btn" class="btn-secondary" type="button" style="display:none;">
+                            <span data-zh="预览已生成的报告" data-en="Preview Available Reports">预览已生成的报告</span>
+                        </button>
+                        <button id="stop-analysis-btn" class="btn-stop" type="button">
+                            <span data-zh="停止分析" data-en="Stop Analysis">停止分析</span>
+                        </button>
+                    </div>
+
+                    <div id="loading-error-banner" class="error-banner" style="display:none;">
+                        <span class="error-icon">▲</span>
+                        <span id="loading-error-message" class="error-message"></span>
+                        <button id="loading-retry-btn" class="btn-retry" type="button" data-zh="重试" data-en="Retry">重试</button>
+                    </div>
+
+                    <div class="loading-console-container">
+                        <div class="console-header">
+                            <span class="console-dot red"></span>
+                            <span class="console-dot yellow"></span>
+                            <span class="console-dot green"></span>
+                            <span class="console-title">Agent Stream Log</span>
+                        </div>
+                        <div id="loading-console" class="loading-console">
+                            <div class="console-line">[SYSTEM] Initializing stream listener...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results View -->
+            <div id="results-view" class="results-container">
+                <!-- Live Status Banner -->
+                <div id="live-status-banner" class="live-status-banner" style="display:none;">
+                    <span class="live-dot"></span>
+                    <span id="live-status-text" data-zh="分析仍在进行中…" data-en="Analysis still running…">分析仍在进行中…</span>
+                    <button id="back-to-progress-btn" type="button" data-zh="返回进度视图" data-en="Back to Progress">返回进度视图</button>
+                </div>
+
+                <!-- Decision Quote Bar Header -->
+                <header id="decision-header" class="decision-card glass-card signal-hold">
+                    <div class="quote-bar-layout">
+                        <!-- Quote left: ticker identity -->
+                        <div class="quote-identity">
+                            <h2 class="ticker-title" id="res-ticker-lg">TLRY</h2>
+                            <div class="ticker-date" id="res-date-lg">--</div>
+                            <div class="action-badge-container">
+                                <div class="action-label" data-zh="最终决策" data-en="Final Action">最终决策</div>
+                                <div id="final-action" class="action-value">HOLD</div>
+                                <div class="action-rating" id="decision-confidence"></div>
+                            </div>
+                        </div>
+
+                        <!-- Quote center: SVG chart -->
+                        <div class="quote-chart" id="price-chart-container">
+                            <svg id="price-chart-svg" style="width:100%; height:110px;"></svg>
+                        </div>
+
+                        <!-- Quote right: Rating & scale -->
+                        <div class="quote-scale">
+                            <div class="rating-scale" id="rating-scale">
+                                <div class="rating-scale-track">
+                                    <span class="rating-tick" data-score="-2" data-zh="强烈卖出" data-en="Strong Sell">强烈卖出</span>
+                                    <span class="rating-tick" data-score="-1" data-zh="减持" data-en="Underweight">减持</span>
+                                    <span class="rating-tick" data-score="0"  data-zh="持有" data-en="Hold">持有</span>
+                                    <span class="rating-tick" data-score="1"  data-zh="增持" data-en="Overweight">增持</span>
+                                    <span class="rating-tick" data-score="2"  data-zh="强烈买入" data-en="Strong Buy">强烈买入</span>
+                                </div>
+                                <div class="rating-marker" id="rating-marker"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics strip -->
+                    <div class="kpi-strip">
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="股票代码" data-en="Ticker">股票代码</span><span id="res-ticker" class="kpi-val">TLRY</span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="分析日期" data-en="Date">分析日期</span><span id="res-date" class="kpi-val">--</span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="入场价" data-en="Entry">入场价</span><span id="res-entry" class="kpi-val kpi-price">--</span></div>
+                        <div class="kpi-tile kpi-bear"><span class="kpi-lbl" data-zh="止损" data-en="Stop Loss">止损</span><span id="res-stop" class="kpi-val kpi-price">--</span><span id="res-stop-pct" class="kpi-delta"></span></div>
+                        <div class="kpi-tile kpi-bull"><span class="kpi-lbl" data-zh="目标价" data-en="Target">目标价</span><span id="res-tp" class="kpi-val kpi-price">--</span><span id="res-tp-pct" class="kpi-delta"></span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="风报比 R:R" data-en="R:R">风报比 R:R</span><span id="res-rr" class="kpi-val kpi-num">--</span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="建议仓位" data-en="Position">建议仓位</span><span id="res-position" class="kpi-val kpi-sub">--</span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="时间尺度" data-en="Horizon">时间尺度</span><span id="res-horizon" class="kpi-val kpi-sub">--</span></div>
+                    </div>
+
+                    <!-- Compact Collapsible Reasoning summary -->
+                    <details class="decision-reasoning-collapsible" open>
+                        <summary>
+                            <span class="rea-icon">▶</span>
+                            <span data-zh="分析经理决策摘要" data-en="Manager Executive Summary">分析经理决策摘要</span>
+                        </summary>
+                        <p id="res-reasoning">--</p>
+                    </details>
+                </header>
+
+                <!-- Apple-style Waterfall Long Report Workspace -->
+                <div class="results-layout-wrapper">
+                    <!-- Left Column: Sequential Report sections -->
+                    <div class="report-flow-container">
+                        
+                        <!-- Technical Analysis -->
+                        <section id="sec-technical" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="技术 & 市场趋势分析报告" data-en="Technical & Market Trend Report">技术 & 市场趋势分析报告</div>
+                                <div class="markdown-content" id="report-market"><div class="empty-state">暂无数据</div></div>
+                            </div>
+                        </section>
+
+                        <!-- Fundamentals -->
+                        <section id="sec-fundamentals" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="财务基本面及估值分析" data-en="Financial Fundamentals & Valuation">财务基本面及估值分析</div>
+                                <div class="markdown-content" id="report-fundamentals"><div class="empty-state">暂无数据</div></div>
+                            </div>
+                        </section>
+
+                        <!-- News -->
+                        <section id="sec-news" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="宏观消息及新闻流跟踪" data-en="Macro Events & News Catalyst Stream">宏观消息及新闻流跟踪</div>
+                                <div class="markdown-content" id="report-news"><div class="empty-state">暂无数据</div></div>
+                            </div>
+                        </section>
+
+                        <!-- Sentiment -->
+                        <section id="sec-sentiment" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="市场多空社交情绪审计" data-en="Market Social & Option Sentiment Audit">市场多空社交情绪审计</div>
+                                <div class="markdown-content" id="report-sentiment"><div class="empty-state">暂无数据</div></div>
+                            </div>
+                        </section>
+
+                        <!-- Researcher Debate -->
+                        <section id="sec-debate" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="研究团队多空辩论及裁决" data-en="Research Team Bull/Bear Debate">研究团队多空辩论及裁决</div>
+                                <div class="debate-layout">
+                                    <div class="debate-columns">
+                                        <div class="debate-col bull-col glass-card">
+                                            <div class="col-header bull-header">
+                                                <span>■</span> <h4 data-zh="多方研究员辩论" data-en="Bull Researcher Thesis">多方研究员辩论</h4>
+                                            </div>
+                                            <div class="col-body markdown-content" id="debate-bull"></div>
+                                        </div>
+                                        <div class="debate-col bear-col glass-card">
+                                            <div class="col-header bear-header">
+                                                <span>■</span> <h4 data-zh="空方研究员辩论" data-en="Bear Researcher Thesis">空方研究员辩论</h4>
+                                            </div>
+                                            <div class="col-body markdown-content" id="debate-bear"></div>
+                                        </div>
+                                    </div>
+                                    <div class="judge-box glass-card">
+                                        <div class="judge-title">
+                                            <span>■</span> <h4 data-zh="研究经理裁决报告" data-en="Research Manager Verdict">研究经理裁决报告</h4>
+                                        </div>
+                                        <div class="markdown-content" id="debate-judge-content"><div class="empty-state">暂无数据</div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Risk Advisory -->
+                        <section id="sec-risk" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="风险防线顾问与风控签发" data-en="Risk Advisory & Portfolio Audit">风险防线顾问与风控签发</div>
+                                <div class="debate-layout">
+                                    <div class="risk-three-col">
+                                        <div class="risk-col glass-card">
+                                            <div class="col-header risk-agg-header">
+                                                <span>■</span> <h4 data-zh="进取顾问评估" data-en="Aggressive Advisor">进取顾问评估</h4>
+                                            </div>
+                                            <div class="col-body markdown-content" id="risk-aggressive"></div>
+                                        </div>
+                                        <div class="risk-col glass-card">
+                                            <div class="col-header risk-neu-header">
+                                                <span>■</span> <h4 data-zh="中性顾问评估" data-en="Neutral Advisor">中性顾问评估</h4>
+                                            </div>
+                                            <div class="col-body markdown-content" id="risk-neutral"></div>
+                                        </div>
+                                        <div class="risk-col glass-card">
+                                            <div class="col-header risk-con-header">
+                                                <span>■</span> <h4 data-zh="保守顾问评估" data-en="Conservative Advisor">保守顾问评估</h4>
+                                            </div>
+                                            <div class="col-body markdown-content" id="risk-conservative"></div>
+                                        </div>
+                                    </div>
+                                    <div class="judge-box glass-card">
+                                        <div class="judge-title">
+                                            <span>■</span> <h4 data-zh="投资组合经理最终审核决策" data-en="Portfolio Manager Final Sign-Off">投资组合经理最终审核决策</h4>
+                                        </div>
+                                        <div class="markdown-content" id="risk-judge-content"><div class="empty-state">暂无数据</div></div>
+                                        <div class="markdown-content" id="final-decision-content" style="display:none;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Execution Plan -->
+                        <section id="sec-trader" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="交易员拟定执行细节" data-en="Trader Proposed Action Plan">交易员拟定执行细节</div>
+                                <div class="trader-section glass-card" style="border:none; padding:0; background:none;">
+                                    <div class="markdown-content" id="trader-plan-content"><div class="empty-state">暂无数据</div></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Raw Full Plan -->
+                        <section id="sec-raw" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="完整原始投资计划 (LLM Draft)" data-en="Multi-Agent Detailed Researcher Plan">完整原始投资计划 (LLM Draft)</div>
+                                <pre class="raw-output" id="raw-markdown"></pre>
+                            </div>
+                        </section>
+
+                        <!-- Running Logs -->
+                        <section id="sec-console" class="sec-anchor">
+                            <div class="report-box glass-card">
+                                <div class="pane-header-title" data-zh="工作站运行日志" data-en="Workstation Console Logs">工作站运行日志</div>
+                                <div class="raw-card" style="background: none; border: none; padding: 0;">
+                                    <div class="loading-console-container" style="height: 240px;">
+                                        <div class="console-header">
+                                            <span class="console-dot red"></span>
+                                            <span class="console-dot yellow"></span>
+                                            <span class="console-dot green"></span>
+                                            <span class="console-title">Agent Stream Log</span>
+                                        </div>
+                                        <div id="results-console" class="loading-console">
+                                            <div class="console-line">[SYSTEM] Workstation loaded. Ready.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- Right Column: Sticky Table of Contents (TOC) -->
+                    <aside class="toc-sidebar">
+                        <!-- Decision Snapshot (populated by displayResults) -->
+                        <div class="toc-summary" id="toc-summary" aria-hidden="true">
+                            <div class="ts-row ts-headline">
+                                <span class="ts-lbl" data-zh="最终决策" data-en="Decision">最终决策</span>
+                                <span id="ts-action" class="ts-action hold">--</span>
+                            </div>
+                            <div class="ts-row">
+                                <span class="ts-lbl" data-zh="评级" data-en="Rating">评级</span>
+                                <span id="ts-rating" class="ts-val">--</span>
+                            </div>
+                            <div class="ts-row">
+                                <span class="ts-lbl" data-zh="入场 / 止损 / 目标" data-en="Entry / Stop / Target">入场 / 止损 / 目标</span>
+                                <span id="ts-triplet" class="ts-mono">-- / -- / --</span>
+                            </div>
+                            <div class="ts-row">
+                                <span class="ts-lbl" data-zh="风报比" data-en="R:R">风报比</span>
+                                <span id="ts-rr" class="ts-mono">--</span>
+                            </div>
+                            <div class="ts-row ts-stack">
+                                <span class="ts-lbl" data-zh="仓位建议" data-en="Position">仓位建议</span>
+                                <span id="ts-position" class="ts-wrap">--</span>
+                            </div>
+                            <div id="ts-conflict" class="ts-conflict" style="display:none">
+                                <span class="ts-conflict-icon">⚠</span>
+                                <span id="ts-conflict-text"></span>
+                            </div>
+                        </div>
+                        <div class="toc-title" data-zh="报告导航" data-en="CONTENTS">报告导航</div>
+                        <nav class="toc-nav">
+                            <a href="#sec-technical" class="toc-link active" data-zh="■ 技术分析" data-en="■ Technical">■ 技术分析</a>
+                            <a href="#sec-fundamentals" class="toc-link" data-zh="■ 财务估值" data-en="■ Fundamentals">■ 财务估值</a>
+                            <a href="#sec-news" class="toc-link" data-zh="■ 宏观新闻" data-en="■ Macro & News">■ 宏观新闻</a>
+                            <a href="#sec-sentiment" class="toc-link" data-zh="■ 市场情绪" data-en="■ Sentiment">■ 市场情绪</a>
+                            <a href="#sec-debate" class="toc-link" data-zh="■ 多空辩论" data-en="■ Thesis Debate">■ 多空辩论</a>
+                            <a href="#sec-risk" class="toc-link" data-zh="■ 风险控制" data-en="■ Risk Audit">■ 风险控制</a>
+                            <a href="#sec-trader" class="toc-link" data-zh="■ 交易方案" data-en="■ Execution">■ 交易方案</a>
+                            <a href="#sec-raw" class="toc-link" data-zh="■ 原始计划" data-en="■ Raw Draft">■ 原始计划</a>
+                            <a href="#sec-console" class="toc-link" data-zh="■ 运行日志" data-en="■ Console Logs">■ 运行日志</a>
+                            <button id="export-pdf-btn" class="export-pdf-btn" type="button" disabled style="width: 100%; text-align: left; padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border-color);">
+                                <span>■</span> <span data-zh="导出 PDF 报告" data-en="Export PDF Report">导出 PDF 报告</span>
+                            </button>
+                        </nav>
+                    </aside>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
