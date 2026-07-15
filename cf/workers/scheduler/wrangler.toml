@@ -1,0 +1,21 @@
+name = "tradingagents-scheduler"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+# Runs every minute; scans `schedules` table for entries whose
+# next_run_at <= now(), enqueues a job for each, updates last_run_at
+# and recomputes next_run_at.
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tradingagents-db"
+database_id = "REPLACE_ME_SAME_AS_API"
+
+# For fanning the "run started" event to any SSE listeners we can share
+# the same DO namespace binding.
+[[durable_objects.bindings]]
+name = "JOB_ROOMS"
+class_name = "JobRoom"
+script_name = "tradingagents-job-room"
