@@ -12,18 +12,23 @@ interleave their log streams.
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
+import datetime
+import hashlib
+import hmac
 import json
 import logging
 import os
 import sys
 import threading
+import time
 
 import requests
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -40,12 +45,96 @@ from .polish import generate_polished_report  # noqa: E402
 
 logger = logging.getLogger("TradingAgentsWebServer")
 
+# ── Admin / access-control configuration ────────────────────────────────────
+# Set TRADINGAGENTS_ADMIN_PASSWORD to enable password protection on all pages.
+# Set TRADINGAGENTS_MAINTENANCE=true to enable maintenance mode (all analysis
+# requests return 503; admin panel still accessible).
+_ADMIN_PASSWORD = os.environ.get("TRADINGAGENTS_ADMIN_PASSWORD", "")
+_SESSION_SECRET = os.environ.get("TRADINGAGENTS_SESSION_SECRET",
+                                  hashlib.sha256(_ADMIN_PASSWORD.encode()).hexdigest())
+_MAINTENANCE = os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes")
+_SESSION_COOKIE = "ta_session"
+_SESSION_TTL = 86400 * 7   # 7 days
+
+# ── Access log: rolling last 200 entries ─────────────────────────────────────
+_access_log: collections.deque = collections.deque(maxlen=500)
+_access_lock = threading.Lock()
+
+
+def _log_request(req: Request, status: int) -> None:
+    """Append a slim access-log entry (non-blocking)."""
+    forwarded = req.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (
+        req.client.host if req.client else "unknown"
+    )
+    entry = {
+        "ts": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "ip": ip,
+        "method": req.method,
+        "path": req.url.path,
+        "status": status,
+        "ua": req.headers.get("user-agent", "")[:80],
+    }
+    with _access_lock:
+        _access_log.appendleft(entry)
+
+
+def _make_session_token(password: str) -> str:
+    return hmac.new(_SESSION_SECRET.encode(), password.encode(), hashlib.sha256).hexdigest()
+
+
+def _is_authenticated(request: Request) -> bool:
+    if not _ADMIN_PASSWORD:
+        return True          # no password set → open to all
+    token = request.cookies.get(_SESSION_COOKIE, "")
+    expected = _make_session_token(_ADMIN_PASSWORD)
+    return hmac.compare_digest(token, expected)
+
+
+def _maintenance_check():
+    """Raise 503 if maintenance mode is active (refreshes from env each call)."""
+    m = os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes")
+    if m:
+        raise HTTPException(status_code=503, detail={
+            "error": "maintenance",
+            "message": "系统维护中，请稍后再试 / System under maintenance."
+        })
+
 # The dashboard doesn't yet expose analyst selection (WEB_FRONTEND_PLAN.md
 # P3 3.2) — this matches TradingAgentsGraph's own default so behavior is
 # unchanged from before the job model.
 _DEFAULT_ANALYSTS = ("market", "social", "news", "fundamentals")
 
 app = FastAPI(title="TradingAgents Web Dashboard")
+
+# ── Auth middleware ──────────────────────────────────────────────────────────
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # Always allow: login page, login POST, admin health check, static assets.
+    public = (
+        path in ("/login", "/api/login", "/api/logout") or
+        path.startswith("/assets/") or
+        path.endswith((".js", ".css", ".ico", ".png", ".jpg", ".svg", ".woff2"))
+    )
+    if public:
+        response = await call_next(request)
+        _log_request(request, response.status_code)
+        return response
+
+    # Password-protect everything else.
+    if _ADMIN_PASSWORD and not _is_authenticated(request):
+        if path.startswith("/api/"):
+            _log_request(request, 401)
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        # Redirect browser to login page
+        _log_request(request, 302)
+        return RedirectResponse(url="/login", status_code=302)
+
+    response = await call_next(request)
+    _log_request(request, response.status_code)
+    return response
 
 # CORS is opt-in and off by default: the dashboard's static files are served
 # by this same app, so same-origin requests need no CORS headers at all.
@@ -62,6 +151,103 @@ if _cors_origins:
     )
 
 registry = JobRegistry()
+
+
+# ── Login / Logout ───────────────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+def login_page():
+    return HTMLResponse(_LOGIN_HTML)
+
+
+@app.post("/api/login")
+async def do_login(request: Request):
+    body = await request.json()
+    password = body.get("password", "")
+    if not _ADMIN_PASSWORD or not hmac.compare_digest(password, _ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="密码错误")
+    token = _make_session_token(_ADMIN_PASSWORD)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        key=_SESSION_COOKIE, value=token,
+        max_age=_SESSION_TTL, httponly=True, samesite="lax", secure=False,
+    )
+    return resp
+
+
+@app.post("/api/logout")
+def do_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(_SESSION_COOKIE)
+    return resp
+
+
+# ── Admin panel ──────────────────────────────────────────────────────────────
+
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+def admin_panel(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse("/login")
+    return HTMLResponse(_ADMIN_HTML)
+
+
+@app.get("/api/admin/status")
+def admin_status(request: Request):
+    """Summary metrics for the admin dashboard."""
+    if not _is_authenticated(request):
+        raise HTTPException(401)
+    with _access_lock:
+        log_snapshot = list(_access_log)
+
+    # IP summary
+    ip_counts: dict[str, int] = {}
+    for e in log_snapshot:
+        ip = e["ip"]
+        ip_counts[ip] = ip_counts.get(ip, 0) + 1
+    top_ips = sorted(ip_counts.items(), key=lambda x: -x[1])[:20]
+
+    # Recent requests (latest 50)
+    recent = log_snapshot[:50]
+
+    job = registry.running_job()
+    return {
+        "maintenance": os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes"),
+        "password_protected": bool(_ADMIN_PASSWORD),
+        "total_requests": len(log_snapshot),
+        "top_ips": [{"ip": ip, "count": n} for ip, n in top_ips],
+        "recent_requests": recent,
+        "running_job": {
+            "id": job.id,
+            "ticker": job.ticker,
+            "trade_date": job.trade_date,
+            "status": job.status(),
+        } if job else None,
+    }
+
+
+@app.post("/api/admin/maintenance")
+async def set_maintenance(request: Request):
+    """Toggle maintenance mode. Body: {\"on\": true|false}"""
+    if not _is_authenticated(request):
+        raise HTTPException(401)
+    body = await request.json()
+    on = bool(body.get("on", True))
+    os.environ["TRADINGAGENTS_MAINTENANCE"] = "true" if on else "false"
+    logger.warning("Maintenance mode %s by admin", "ON" if on else "OFF")
+    return {"maintenance": on}
+
+
+@app.post("/api/admin/cancel")
+def admin_cancel_job(request: Request):
+    """Force-cancel the currently running job."""
+    if not _is_authenticated(request):
+        raise HTTPException(401)
+    job = registry.running_job()
+    if not job:
+        return {"ok": False, "message": "没有正在运行的任务"}
+    job.cancel_requested.set()
+    logger.warning("Admin force-cancelled job %s", job.id)
+    return {"ok": True, "job_id": job.id}
 
 
 class AnalysisRequest(BaseModel):
@@ -219,6 +405,7 @@ def _run_job(job: Job, config: dict) -> None:
 
 @app.post("/api/analyze", status_code=202)
 def analyze_ticker(req: AnalysisRequest):
+    _maintenance_check()          # returns 503 if maintenance mode is on
     logger.info("Received analysis request: %s", req)
     try:
         job = registry.create(req.ticker, req.trade_date)
@@ -475,17 +662,26 @@ def ticker_search(q: str, limit: int = 15):
         return out
 
     async def _gather():
-        return await asyncio.gather(
-            asyncio.to_thread(_yahoo),
-            asyncio.to_thread(_eastmoney),
-        )
+        # Skip Eastmoney entirely for pure-ASCII-letter queries — its
+        # suggest endpoint matches on pinyin initials, so `ar` returns
+        # 奥瑞德 (ARD) / 奥锐特 (ART) / 奥瑞金 (ARJ) etc., which is pure
+        # noise when the user is typing an English ticker like AAPL. Only
+        # digits (A-share numeric codes) or CJK characters warrant it.
+        has_cjk = any("一" <= ch <= "鿿" for ch in q)
+        use_east = q.isdigit() or has_cjk
+        if use_east:
+            return await asyncio.gather(
+                asyncio.to_thread(_yahoo),
+                asyncio.to_thread(_eastmoney),
+            )
+        return [await asyncio.to_thread(_yahoo), []]
 
     yahoo, east = asyncio.run(_gather())
 
     seen: set[str] = set()
     merged: list[dict] = []
-    # Eastmoney is the stronger source for A-share/HK numeric codes and
-    # any CJK query; Yahoo wins for Latin tickers (US/EU/crypto/ETF).
+    # Eastmoney wins when the query is numeric or CJK (A-share / HK by
+    # code, or Chinese company name); Yahoo wins for Latin tickers.
     prefer_east = q.isdigit() or any("一" <= ch <= "鿿" for ch in q)
     order = (east, yahoo) if prefer_east else (yahoo, east)
     for group in order:
@@ -500,6 +696,198 @@ def ticker_search(q: str, limit: int = 15):
         if len(merged) >= limit:
             break
     return {"items": merged}
+
+
+# ── Inline HTML templates ────────────────────────────────────────────────────
+
+_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TradingAgents · 登录</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#101418;border:1px solid #212830;border-radius:12px;padding:40px 36px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  h1{font-size:18px;font-weight:600;letter-spacing:-.02em;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+  .logo{width:22px;height:22px;background:#14151A;border-radius:6px;display:inline-flex;align-items:center;justify-content:center}
+  .dot{width:8px;height:8px;border-radius:50%;background:#B98029}
+  p{color:#8B949E;font-size:13px;margin-bottom:28px}
+  label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:#8B949E;display:block;margin-bottom:6px}
+  input{width:100%;background:#161B22;border:1px solid #212830;border-radius:6px;color:#E6EDF3;padding:10px 12px;font-size:14px;outline:none;transition:border-color .2s}
+  input:focus{border-color:#B98029}
+  button{width:100%;margin-top:20px;background:#FF2D55;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:600;padding:11px;cursor:pointer;transition:opacity .15s}
+  button:hover{opacity:.9}
+  .err{color:#FF453A;font-size:13px;margin-top:12px;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1><span class="logo"><span class="dot"></span></span>TradingAgents</h1>
+  <p>请输入访问密码</p>
+  <label for="pw">密码</label>
+  <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password">
+  <button onclick="login()">进入工作站</button>
+  <div class="err" id="err">密码错误，请重试</div>
+</div>
+<script>
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+async function login(){
+  const pw=document.getElementById('pw').value;
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(r.ok){location.href='/';}
+  else{const e=document.getElementById('err');e.style.display='block';}
+}
+</script>
+</body></html>"""
+
+
+_ADMIN_HTML = """<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TradingAgents · 管理后台</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;padding:24px}
+  h1{font-size:20px;font-weight:600;margin-bottom:4px}
+  .sub{color:#8B949E;font-size:13px;margin-bottom:24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px}
+  .kpi{background:#101418;border:1px solid #212830;border-radius:10px;padding:16px 18px}
+  .kpi .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:#8B949E;font-weight:600;margin-bottom:8px}
+  .kpi .val{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card{background:#101418;border:1px solid #212830;border-radius:10px;padding:18px 20px;margin-bottom:16px}
+  .card h2{font-size:13px;font-weight:600;margin-bottom:12px;color:#E6EDF3}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{color:#8B949E;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:left;padding:6px 8px;border-bottom:1px solid #212830}
+  td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.04);font-variant-numeric:tabular-nums}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500}
+  .ok{background:rgba(47,125,90,.2);color:#30D158}
+  .warn{background:rgba(255,149,0,.15);color:#FF9500}
+  .err{background:rgba(255,69,58,.15);color:#FF453A}
+  .actions{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap}
+  .btn{padding:8px 16px;border-radius:6px;border:1px solid #212830;background:#161B22;color:#E6EDF3;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s}
+  .btn:hover{background:#1c2128}
+  .btn.danger{background:rgba(255,69,58,.15);border-color:rgba(255,69,58,.35);color:#FF453A}
+  .btn.danger:hover{background:rgba(255,69,58,.25)}
+  .btn.amber{background:rgba(185,128,41,.15);border-color:rgba(185,128,41,.35);color:#B98029}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:#30D158;box-shadow:0 0 0 3px rgba(47,125,90,.2)}
+  .status-dot.off{background:#FF453A;box-shadow:0 0 0 3px rgba(255,69,58,.2)}
+</style>
+</head>
+<body>
+<h1>🛡 管理后台</h1>
+<p class="sub" id="sub-time">加载中…</p>
+
+<div class="actions">
+  <button class="btn" onclick="location.href='/'">← 返回工作站</button>
+  <button class="btn amber" id="btn-maintenance" onclick="toggleMaintenance()">开启维护模式</button>
+  <button class="btn danger" onclick="cancelJob()">强制终止当前任务</button>
+  <button class="btn" onclick="logout()">退出登录</button>
+</div>
+
+<div class="grid" id="kpi-grid"></div>
+
+<div class="card">
+  <h2>正在运行的任务</h2>
+  <div id="job-info" style="color:#8B949E;font-size:13px">暂无运行中的任务</div>
+</div>
+
+<div class="card">
+  <h2>访问最多的 IP（前 20）</h2>
+  <table><thead><tr><th>IP</th><th>请求数</th></tr></thead><tbody id="ip-tbody"></tbody></table>
+</div>
+
+<div class="card">
+  <h2>最近 50 条请求</h2>
+  <table>
+    <thead><tr><th>时间</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th><th>UA</th></tr></thead>
+    <tbody id="log-tbody"></tbody>
+  </table>
+</div>
+
+<script>
+let maintenanceOn = false;
+
+async function load(){
+  const r = await fetch('/api/admin/status');
+  if(!r.ok){ document.body.innerHTML='<p style="color:#FF453A;padding:40px">无权限</p>'; return; }
+  const d = await r.json();
+  maintenanceOn = d.maintenance;
+
+  document.getElementById('sub-time').textContent =
+    '刷新于 ' + new Date().toLocaleTimeString('zh-CN');
+
+  // KPI
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi"><div class="lbl">访问总数</div><div class="val">${d.total_requests}</div></div>
+    <div class="kpi"><div class="lbl">独立 IP</div><div class="val">${d.top_ips.length}</div></div>
+    <div class="kpi"><div class="lbl">密码保护</div><div class="val" style="font-size:16px;margin-top:4px">
+      <span class="badge ${d.password_protected?'ok':'warn'}">${d.password_protected?'已开启':'未设置'}</span></div></div>
+    <div class="kpi"><div class="lbl">维护模式</div><div class="val" style="font-size:16px;margin-top:4px">
+      <span class="status-dot ${d.maintenance?'off':''}"></span></div></div>`;
+
+  // Maintenance button text
+  document.getElementById('btn-maintenance').textContent =
+    d.maintenance ? '关闭维护模式 ✓' : '开启维护模式';
+  document.getElementById('btn-maintenance').className =
+    d.maintenance ? 'btn danger' : 'btn amber';
+
+  // Running job
+  const ji = document.getElementById('job-info');
+  if(d.running_job){
+    ji.innerHTML = `<span class="badge ok">运行中</span>&nbsp;
+      <strong>${d.running_job.ticker}</strong> &nbsp;
+      ${d.running_job.trade_date} &nbsp;
+      <code style="font-size:11px;color:#8B949E">${d.running_job.id}</code>`;
+  } else {
+    ji.textContent = '暂无运行中的任务';
+  }
+
+  // IPs
+  document.getElementById('ip-tbody').innerHTML =
+    d.top_ips.map(x=>`<tr><td>${x.ip}</td><td>${x.count}</td></tr>`).join('');
+
+  // Log
+  document.getElementById('log-tbody').innerHTML =
+    d.recent_requests.map(e=>{
+      const sc = e.status;
+      const cls = sc>=500?'err':sc>=400?'warn':'ok';
+      return `<tr>
+        <td>${e.ts}</td><td>${e.ip}</td><td>${e.method}</td>
+        <td style="font-family:monospace">${e.path}</td>
+        <td><span class="badge ${cls}">${e.status}</span></td>
+        <td style="color:#8B949E;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${e.ua}</td>
+      </tr>`;
+    }).join('');
+}
+
+async function toggleMaintenance(){
+  const on = !maintenanceOn;
+  if(on && !confirm('确认开启维护模式？开启后所有分析请求将返回 503。')) return;
+  await fetch('/api/admin/maintenance', {method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({on})});
+  load();
+}
+
+async function cancelJob(){
+  if(!confirm('确认强制终止当前正在运行的分析任务？')) return;
+  const r = await fetch('/api/admin/cancel', {method:'POST'});
+  const d = await r.json();
+  alert(d.ok ? '任务已终止' : d.message);
+  load();
+}
+
+async function logout(){
+  await fetch('/api/logout',{method:'POST'});
+  location.href='/login';
+}
+
+load();
+setInterval(load, 10000);  // auto-refresh every 10s
+</script>
+</body></html>"""
 
 
 # Mount static files at root — must come last so /api/* routes above take

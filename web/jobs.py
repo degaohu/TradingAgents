@@ -166,3 +166,10 @@ class JobRegistry:
             if self._current_id is None:
                 return None
             return self._jobs.get(self._current_id)
+
+    def running_job(self) -> Job | None:
+        """Return the currently running job, or None."""
+        job = self.current()
+        if job and not job.is_finished():
+            return job
+        return None
