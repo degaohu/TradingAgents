@@ -45,23 +45,29 @@ from .polish import generate_polished_report  # noqa: E402
 
 logger = logging.getLogger("TradingAgentsWebServer")
 
-# ── Admin / access-control configuration ────────────────────────────────────
-# Set TRADINGAGENTS_ADMIN_PASSWORD to enable password protection on all pages.
-# Set TRADINGAGENTS_MAINTENANCE=true to enable maintenance mode (all analysis
-# requests return 503; admin panel still accessible).
-_ADMIN_PASSWORD = os.environ.get("TRADINGAGENTS_ADMIN_PASSWORD", "")
-_SESSION_SECRET = os.environ.get("TRADINGAGENTS_SESSION_SECRET",
-                                  hashlib.sha256(_ADMIN_PASSWORD.encode()).hexdigest())
+# ── Multi-user access control ────────────────────────────────────────────────
+# Hard-coded user list: username → password.
+# To add/remove users, edit _USERS below and redeploy.
+# To change the shared password update _USERS and redeploy (no env var needed).
+_USERS: dict[str, str] = {
+    "user1": os.environ.get("TRADINGAGENTS_USER_PASSWORD", "123321"),
+    "user2": os.environ.get("TRADINGAGENTS_USER_PASSWORD", "123321"),
+    "user3": os.environ.get("TRADINGAGENTS_USER_PASSWORD", "123321"),
+}
+# Admin accounts: these users can access /admin.
+_ADMIN_USERS: set[str] = {"user1"}
+
+_SESSION_SECRET = os.environ.get("TRADINGAGENTS_SESSION_SECRET", "tradingagents-secret-key-change-me")
 _MAINTENANCE = os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes")
 _SESSION_COOKIE = "ta_session"
 _SESSION_TTL = 86400 * 7   # 7 days
 
-# ── Access log: rolling last 200 entries ─────────────────────────────────────
+# ── Access log: rolling last 500 entries ─────────────────────────────────────
 _access_log: collections.deque = collections.deque(maxlen=500)
 _access_lock = threading.Lock()
 
 
-def _log_request(req: Request, status: int) -> None:
+def _log_request(req: Request, status: int, username: str = "") -> None:
     """Append a slim access-log entry (non-blocking)."""
     forwarded = req.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() if forwarded else (
@@ -70,6 +76,7 @@ def _log_request(req: Request, status: int) -> None:
     entry = {
         "ts": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "ip": ip,
+        "user": username,
         "method": req.method,
         "path": req.url.path,
         "status": status,
@@ -79,16 +86,30 @@ def _log_request(req: Request, status: int) -> None:
         _access_log.appendleft(entry)
 
 
-def _make_session_token(password: str) -> str:
-    return hmac.new(_SESSION_SECRET.encode(), password.encode(), hashlib.sha256).hexdigest()
+def _make_session_token(username: str) -> str:
+    """Generate a signed token for the given username."""
+    return hmac.new(_SESSION_SECRET.encode(), username.encode(), hashlib.sha256).hexdigest()
+
+
+def _get_current_user(request: Request) -> str | None:
+    """Return the logged-in username, or None if not authenticated."""
+    token = request.cookies.get(_SESSION_COOKIE, "")
+    if not token:
+        return None
+    # Try each known user
+    for username in _USERS:
+        if hmac.compare_digest(token, _make_session_token(username)):
+            return username
+    return None
 
 
 def _is_authenticated(request: Request) -> bool:
-    if not _ADMIN_PASSWORD:
-        return True          # no password set → open to all
-    token = request.cookies.get(_SESSION_COOKIE, "")
-    expected = _make_session_token(_ADMIN_PASSWORD)
-    return hmac.compare_digest(token, expected)
+    return _get_current_user(request) is not None
+
+
+def _is_admin(request: Request) -> bool:
+    user = _get_current_user(request)
+    return user is not None and user in _ADMIN_USERS
 
 
 def _maintenance_check():
@@ -112,7 +133,7 @@ app = FastAPI(title="TradingAgents Web Dashboard")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Always allow: login page, login POST, admin health check, static assets.
+    # Always allow: login page, login POST, logout, static assets.
     public = (
         path in ("/login", "/api/login", "/api/logout") or
         path.startswith("/assets/") or
@@ -123,8 +144,9 @@ async def auth_middleware(request: Request, call_next):
         _log_request(request, response.status_code)
         return response
 
-    # Password-protect everything else.
-    if _ADMIN_PASSWORD and not _is_authenticated(request):
+    # Require login for everything else.
+    user = _get_current_user(request)
+    if not user:
         if path.startswith("/api/"):
             _log_request(request, 401)
             return JSONResponse({"error": "unauthorized"}, status_code=401)
@@ -133,7 +155,7 @@ async def auth_middleware(request: Request, call_next):
         return RedirectResponse(url="/login", status_code=302)
 
     response = await call_next(request)
-    _log_request(request, response.status_code)
+    _log_request(request, response.status_code, username=user or "")
     return response
 
 # CORS is opt-in and off by default: the dashboard's static files are served
@@ -163,11 +185,13 @@ def login_page():
 @app.post("/api/login")
 async def do_login(request: Request):
     body = await request.json()
+    username = body.get("username", "").strip()
     password = body.get("password", "")
-    if not _ADMIN_PASSWORD or not hmac.compare_digest(password, _ADMIN_PASSWORD):
-        raise HTTPException(status_code=401, detail="密码错误")
-    token = _make_session_token(_ADMIN_PASSWORD)
-    resp = JSONResponse({"ok": True})
+    correct_password = _USERS.get(username)
+    if not correct_password or not hmac.compare_digest(password, correct_password):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    token = _make_session_token(username)
+    resp = JSONResponse({"ok": True, "username": username, "is_admin": username in _ADMIN_USERS})
     resp.set_cookie(
         key=_SESSION_COOKIE, value=token,
         max_age=_SESSION_TTL, httponly=True, samesite="lax", secure=False,
@@ -187,16 +211,22 @@ def do_logout():
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_panel(request: Request):
-    if not _is_authenticated(request):
-        return RedirectResponse("/login")
-    return HTMLResponse(_ADMIN_HTML)
+    if not _is_admin(request):
+        if not _is_authenticated(request):
+            return RedirectResponse("/login")
+        # logged in but not admin
+        return HTMLResponse("<html><body style='background:#080A0C;color:#FF453A;font-family:sans-serif;padding:40px'>"
+                            "<h2>⛔ 无权限</h2><p>当前账号没有管理员权限。</p>"
+                            "<p><a href='/' style='color:#0A84FF'>返回首页</a></p></body></html>", status_code=403)
+    user = _get_current_user(request)
+    return HTMLResponse(_ADMIN_HTML.replace("__CURRENT_USER__", user or ""))
 
 
 @app.get("/api/admin/status")
 def admin_status(request: Request):
     """Summary metrics for the admin dashboard."""
-    if not _is_authenticated(request):
-        raise HTTPException(401)
+    if not _is_admin(request):
+        raise HTTPException(403)
     with _access_lock:
         log_snapshot = list(_access_log)
 
@@ -213,7 +243,9 @@ def admin_status(request: Request):
     job = registry.running_job()
     return {
         "maintenance": os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes"),
-        "password_protected": bool(_ADMIN_PASSWORD),
+        "current_user": _get_current_user(request),
+        "users": list(_USERS.keys()),
+        "admin_users": list(_ADMIN_USERS),
         "total_requests": len(log_snapshot),
         "top_ips": [{"ip": ip, "count": n} for ip, n in top_ips],
         "recent_requests": recent,
@@ -229,8 +261,8 @@ def admin_status(request: Request):
 @app.post("/api/admin/maintenance")
 async def set_maintenance(request: Request):
     """Toggle maintenance mode. Body: {\"on\": true|false}"""
-    if not _is_authenticated(request):
-        raise HTTPException(401)
+    if not _is_admin(request):
+        raise HTTPException(403)
     body = await request.json()
     on = bool(body.get("on", True))
     os.environ["TRADINGAGENTS_MAINTENANCE"] = "true" if on else "false"
@@ -241,7 +273,7 @@ async def set_maintenance(request: Request):
 @app.post("/api/admin/cancel")
 def admin_cancel_job(request: Request):
     """Force-cancel the currently running job."""
-    if not _is_authenticated(request):
+    if not _is_admin(request):
         raise HTTPException(401)
     job = registry.running_job()
     if not job:
@@ -715,6 +747,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
   .dot{width:8px;height:8px;border-radius:50%;background:#B98029}
   p{color:#8B949E;font-size:13px;margin-bottom:28px}
   label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:#8B949E;display:block;margin-bottom:6px}
+  .field{margin-bottom:14px}
   input{width:100%;background:#161B22;border:1px solid #212830;border-radius:6px;color:#E6EDF3;padding:10px 12px;font-size:14px;outline:none;transition:border-color .2s}
   input:focus{border-color:#B98029}
   button{width:100%;margin-top:20px;background:#FF2D55;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:600;padding:11px;cursor:pointer;transition:opacity .15s}
@@ -725,17 +758,25 @@ _LOGIN_HTML = """<!DOCTYPE html>
 <body>
 <div class="card">
   <h1><span class="logo"><span class="dot"></span></span>TradingAgents</h1>
-  <p>请输入访问密码</p>
-  <label for="pw">密码</label>
-  <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password">
+  <p>请输入用户名和密码</p>
+  <div class="field">
+    <label for="un">用户名</label>
+    <input id="un" type="text" placeholder="user1" autocomplete="username">
+  </div>
+  <div class="field">
+    <label for="pw">密码</label>
+    <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password">
+  </div>
   <button onclick="login()">进入工作站</button>
-  <div class="err" id="err">密码错误，请重试</div>
+  <div class="err" id="err">用户名或密码错误，请重试</div>
 </div>
 <script>
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+document.getElementById('un').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('pw').focus()});
 async function login(){
+  const un=document.getElementById('un').value.trim();
   const pw=document.getElementById('pw').value;
-  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:un,password:pw})});
   if(r.ok){location.href='/';}
   else{const e=document.getElementById('err');e.style.display='block';}
 }
@@ -803,7 +844,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
 <div class="card">
   <h2>最近 50 条请求</h2>
   <table>
-    <thead><tr><th>时间</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th><th>UA</th></tr></thead>
+    <thead><tr><th>时间</th><th>用户</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th></tr></thead>
     <tbody id="log-tbody"></tbody>
   </table>
 </div>
@@ -818,16 +859,30 @@ async function load(){
   maintenanceOn = d.maintenance;
 
   document.getElementById('sub-time').textContent =
-    '刷新于 ' + new Date().toLocaleTimeString('zh-CN');
+    '当前用户：' + (d.current_user||'?') + ' · 刷新于 ' + new Date().toLocaleTimeString('zh-CN');
 
   // KPI
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi"><div class="lbl">访问总数</div><div class="val">${d.total_requests}</div></div>
     <div class="kpi"><div class="lbl">独立 IP</div><div class="val">${d.top_ips.length}</div></div>
-    <div class="kpi"><div class="lbl">密码保护</div><div class="val" style="font-size:16px;margin-top:4px">
-      <span class="badge ${d.password_protected?'ok':'warn'}">${d.password_protected?'已开启':'未设置'}</span></div></div>
+    <div class="kpi"><div class="lbl">用户数</div><div class="val">${(d.users||[]).length}</div></div>
     <div class="kpi"><div class="lbl">维护模式</div><div class="val" style="font-size:16px;margin-top:4px">
       <span class="status-dot ${d.maintenance?'off':''}"></span></div></div>`;
+
+  // Users list
+  const usersGrid = document.getElementById('users-grid') || (() => {
+    const g = document.createElement('div'); g.id='users-grid';
+    g.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px';
+    document.getElementById('kpi-grid').insertAdjacentElement('afterend', g);
+    return g;
+  })();
+  usersGrid.innerHTML = (d.users||[]).map(u=>`
+    <span style="padding:4px 10px;border-radius:999px;font-size:12px;
+      background:${(d.admin_users||[]).includes(u)?'rgba(185,128,41,.2)':'rgba(255,255,255,.05)'};
+      border:1px solid ${(d.admin_users||[]).includes(u)?'rgba(185,128,41,.4)':'rgba(255,255,255,.08)'};
+      color:${(d.admin_users||[]).includes(u)?'#FFB84D':'#C7CDD5'}">
+      ${u}${(d.admin_users||[]).includes(u)?' 👑':''}
+    </span>`).join('');
 
   // Maintenance button text
   document.getElementById('btn-maintenance').textContent =
@@ -856,10 +911,11 @@ async function load(){
       const sc = e.status;
       const cls = sc>=500?'err':sc>=400?'warn':'ok';
       return `<tr>
-        <td>${e.ts}</td><td>${e.ip}</td><td>${e.method}</td>
+        <td>${e.ts}</td>
+        <td style="color:#B98029;font-weight:500">${e.user||'—'}</td>
+        <td>${e.ip}</td><td>${e.method}</td>
         <td style="font-family:monospace">${e.path}</td>
         <td><span class="badge ${cls}">${e.status}</span></td>
-        <td style="color:#8B949E;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${e.ua}</td>
       </tr>`;
     }).join('');
 }
