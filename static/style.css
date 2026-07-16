@@ -1450,6 +1450,11 @@ body {
    Strategy:
      iPad:   sidebar becomes overlay drawer, TOC hidden, 2-col KPI
      Mobile: sidebar = full-screen overlay, all multi-col → 1-col,
+
+/* Mobile-only elements: hidden by default on desktop,
+   shown only via media queries below. */
+.mobile-topbar { display: none; }
+.mobile-fab    { display: none; }
              bottom-anchored "开始分析" button, touch-friendly tap targets
    ================================================================== */
 

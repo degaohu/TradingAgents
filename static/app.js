@@ -1824,7 +1824,7 @@ function initTOCScroller() {
 
     const topbar = document.createElement('div');
     topbar.className = 'mobile-topbar';
-    topbar.style.display = 'none';   // CSS shows it via media query
+    topbar.style.display = 'flex';   // always show on tablet/mobile (JS only runs when isTablet())
     topbar.innerHTML = `
       <button class="menu-btn" id="mob-menu-btn" aria-label="菜单">
         <span></span><span></span><span></span>
@@ -1839,7 +1839,7 @@ function initTOCScroller() {
     const fab = document.createElement('button');
     fab.className = 'mobile-fab';
     fab.id = 'mob-fab';
-    fab.style.display = 'none';   // CSS shows via media query
+    fab.style.display = 'flex';   // always show on mobile (JS only runs when isTablet())
     fab.textContent = '开始分析';
     document.body.appendChild(fab);
 
