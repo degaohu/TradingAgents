@@ -171,6 +171,7 @@ async def do_login(request: Request):
     resp.set_cookie(
         key=_SESSION_COOKIE, value=token,
         max_age=_SESSION_TTL, httponly=True, samesite="lax", secure=False,
+        path="/",
     )
     return resp
 
