@@ -21,8 +21,8 @@ __all__ = ["app"]
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.environ.get("TRADINGAGENTS_WEB_HOST", "127.0.0.1")
-    port = int(os.environ.get("TRADINGAGENTS_WEB_PORT", "8000"))
+    host = os.environ.get("TRADINGAGENTS_WEB_HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT") or os.environ.get("TRADINGAGENTS_WEB_PORT", "8000"))
     reload = os.environ.get("TRADINGAGENTS_WEB_RELOAD", "false").strip().lower() in (
         "true", "1", "yes", "on",
     )
