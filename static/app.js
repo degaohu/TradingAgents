@@ -1209,6 +1209,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         input.addEventListener("input", refresh);
+        // IME (Chinese/Japanese/Korean) commits text on compositionend, and
+        // some browser+IME combos don't fire a follow-up `input` event —
+        // so refresh explicitly, otherwise typing 「云图」 leaves the box
+        // showing stale suggestions from the partial pinyin.
+        input.addEventListener("compositionend", refresh);
         input.addEventListener("focus", () => { if (input.value.trim()) refresh(); });
         input.addEventListener("blur",  () => setTimeout(close, 120));
         input.addEventListener("keydown", (e) => {
@@ -1219,8 +1224,19 @@ document.addEventListener("DOMContentLoaded", () => {
             else if (e.key === "Escape") { close(); }
         });
 
-        // On submit-time normalization: turn bare "600519" into "600519.SS".
+        // On submit-time normalization:
+        //   1. If the dropdown is open and has an active item, pick it first
+        //      (handles the case where user types "云图", sees the suggestion,
+        //      then hits "开始分析" without clicking the suggestion item).
+        //   2. Turn bare "600519" into "600519.SS" etc.
         input.form && input.form.addEventListener("submit", () => {
+            // Auto-pick the first suggestion if the input value looks like
+            // a company name rather than a symbol (contains non-ASCII or
+            // isn't already a valid ticker code).
+            if (items.length > 0 && !list.hidden) {
+                const idx = activeIdx >= 0 ? activeIdx : 0;
+                pick(idx);   // sets input.value to the symbol
+            }
             input.value = normalizeAShare(input.value);
         }, true);
 
@@ -1751,4 +1767,157 @@ function initTOCScroller() {
             b.setAttribute('aria-current', String(isActive));
         });
     }
+})();
+
+// ── Screen Mode Control ──────────────────────────────────────────────
+// Toggles between 'default', 'flat-led', and 'curved-led' screen modes.
+// Persisted in localStorage.
+(function initScreenMode() {
+    const KEY = 'tradingagents.screenMode';
+    const btns = document.querySelectorAll('.screen-controls .rc-btn');
+    if (!btns.length) return;
+
+    const saved = localStorage.getItem(KEY) || 'default';
+    apply(saved);
+
+    btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = btn.dataset.mode;
+            if (!mode) return;
+            apply(mode);
+            try { localStorage.setItem(KEY, mode); } catch (e) { /* ignore */ }
+        });
+    });
+
+    function apply(mode) {
+        document.documentElement.classList.remove('screen-flat-led', 'screen-curved-led');
+        
+        if (mode === 'flat-led') {
+            document.documentElement.classList.add('screen-flat-led');
+        } else if (mode === 'curved-led') {
+            document.documentElement.classList.add('screen-flat-led', 'screen-curved-led');
+        }
+        
+        btns.forEach(b => {
+            b.setAttribute('aria-current', String(b.dataset.mode === mode));
+        });
+    }
+})();
+
+
+// ── Mobile / Tablet Responsive UI ────────────────────────────────────────────
+// Injects a topbar and floating-action-button (FAB) for small screens,
+// and wires the sidebar as a slide-over drawer.
+(function initMobileUI() {
+
+    const TABLET_BP = 1024;   // px
+    const MOBILE_BP = 767;    // px
+
+    function isMobile()  { return window.innerWidth <= MOBILE_BP; }
+    function isTablet()  { return window.innerWidth <= TABLET_BP; }
+
+    if (!isTablet()) return;   // desktop: nothing to do
+
+    // ── 1. Inject mobile topbar ─────────────────────────────────────
+    const mainContent = document.querySelector('.main-content');
+    if (!mainContent) return;
+
+    const topbar = document.createElement('div');
+    topbar.className = 'mobile-topbar';
+    topbar.style.display = 'none';   // CSS shows it via media query
+    topbar.innerHTML = `
+      <button class="menu-btn" id="mob-menu-btn" aria-label="菜单">
+        <span></span><span></span><span></span>
+      </button>
+      <span class="logo-icon" style="color:var(--accent-pink);font-size:13px">■</span>
+      <span class="logo-text">TRADING AGENTS</span>
+      <span class="topbar-ticker" id="mob-ticker"></span>
+    `;
+    mainContent.insertBefore(topbar, mainContent.firstChild);
+
+    // ── 2. Floating action button (mobile only) ─────────────────────
+    const fab = document.createElement('button');
+    fab.className = 'mobile-fab';
+    fab.id = 'mob-fab';
+    fab.style.display = 'none';   // CSS shows via media query
+    fab.textContent = '开始分析';
+    document.body.appendChild(fab);
+
+    // FAB triggers the same form submit as the desktop button
+    fab.addEventListener('click', () => {
+        const configForm = document.getElementById('config-form');
+        if (configForm) {
+            configForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+    });
+
+    // ── 3. Sidebar drawer toggle ────────────────────────────────────
+    const sidebar = document.querySelector('.sidebar-config');
+    const menuBtn = document.getElementById('mob-menu-btn');
+
+    function openDrawer() {
+        sidebar.classList.add('mobile-open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeDrawer() {
+        sidebar.classList.remove('mobile-open');
+        document.body.style.overflow = '';
+    }
+    if (menuBtn) menuBtn.addEventListener('click', openDrawer);
+
+    // Close drawer on tap-outside (the ::after overlay captures clicks)
+    sidebar.addEventListener('click', (e) => {
+        if (e.target === sidebar) closeDrawer();
+    });
+    // Close on any link/button inside drawer
+    sidebar.querySelectorAll('button, a').forEach(el => {
+        el.addEventListener('click', () => {
+            if (isMobile()) closeDrawer();
+        });
+    });
+
+    // ── 4. Sync topbar ticker text with main form ───────────────────
+    const tickerInput = document.getElementById('ticker');
+    const mobTicker   = document.getElementById('mob-ticker');
+    if (tickerInput && mobTicker) {
+        function updateMobTicker() {
+            const v = tickerInput.value.trim();
+            mobTicker.textContent = v ? v : '';
+        }
+        tickerInput.addEventListener('input', updateMobTicker);
+        updateMobTicker();
+    }
+
+    // ── 5. Keep FAB label in sync with submit-btn state ─────────────
+    const submitBtn = document.getElementById('submit-btn');
+    if (submitBtn && fab) {
+        const mo = new MutationObserver(() => {
+            const span = submitBtn.querySelector('span');
+            fab.textContent = span ? span.textContent : submitBtn.textContent;
+            fab.disabled = submitBtn.disabled;
+        });
+        mo.observe(submitBtn, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+    }
+
+    // ── 6. On results / loading view switch, close drawer ───────────
+    const origShowView = window.__taShowView;
+    // Patch showView inside closure by watching class changes
+    const observer = new MutationObserver(() => {
+        const loading = document.getElementById('loading-view');
+        const results = document.getElementById('results-view');
+        if ((loading && loading.classList.contains('active')) ||
+            (results && results.classList.contains('active'))) {
+            closeDrawer();
+        }
+    });
+    ['loading-view', 'results-view', 'welcome-view'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+
+    // ── 7. Resize handler: teardown if going back to desktop ─────────
+    window.addEventListener('resize', () => {
+        if (!isTablet()) closeDrawer();
+    });
+
 })();

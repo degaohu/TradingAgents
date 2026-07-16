@@ -131,8 +131,12 @@ body {
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
     gap: 8px;
 }
+.sidebar-header .logo-icon,
+.sidebar-header .logo-text { flex-shrink: 0; }
 .logo-icon {
     color: var(--accent-pink);
     font-size: 14px;
@@ -160,6 +164,7 @@ body {
     cursor: pointer;
     padding: 2px 4px;
     font-weight: 700;
+    white-space: nowrap;
     transition: color 0.15s ease;
 }
 .lang-btn.active {
@@ -1258,6 +1263,7 @@ body {
     border-radius: 4px;
     cursor: pointer;
     line-height: 1;
+    white-space: nowrap;
     transition: background var(--od-duration-normal) var(--od-ease-out),
                 color var(--od-duration-normal) var(--od-ease-out);
 }
@@ -1439,31 +1445,491 @@ body {
     100% { opacity: 1; }
 }
 
-/* Responsive configurations */
+/* ==================================================================
+   RESPONSIVE — iPad (768-1024px) & Mobile (< 768px)
+   Strategy:
+     iPad:   sidebar becomes overlay drawer, TOC hidden, 2-col KPI
+     Mobile: sidebar = full-screen overlay, all multi-col → 1-col,
+             bottom-anchored "开始分析" button, touch-friendly tap targets
+   ================================================================== */
+
+/* ── iPad ─────────────────────────────────────────────── ≤1024px ── */
 @media (max-width: 1024px) {
-    .results-workspace {
+
+    /* Sidebar becomes an overlay drawer; hidden by default */
+    .app-container {
         flex-direction: column;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .sidebar-config {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: 280px !important;
+        z-index: 200;
+        transform: translateX(-100%);
+        transition: transform .28s cubic-bezier(.16,1,.3,1),
+                    box-shadow .28s cubic-bezier(.16,1,.3,1);
+        box-shadow: none;
         overflow-y: auto;
     }
-    .dock-panel {
-        width: 100%;
-        height: auto;
-        overflow: visible;
-        margin-bottom: 20px;
+    .sidebar-config.mobile-open {
+        transform: translateX(0);
+        box-shadow: 8px 0 40px rgba(0,0,0,.7);
     }
-    .kpi-strip {
-        grid-template-columns: repeat(4, 1fr);
+    /* Dim overlay behind drawer */
+    .sidebar-config.mobile-open::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        left: 280px;
+        background: rgba(0,0,0,.5);
+        z-index: -1;
     }
+    /* Don't use the old collapsed class on small screens */
+    .sidebar-config.collapsed {
+        width: 280px !important;
+        padding: inherit !important;
+        opacity: 1 !important;
+        border-right: 1px solid var(--border-color) !important;
+        overflow: auto !important;
+    }
+
+    /* Top navbar replaces the sidebar toggle */
+    .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+        padding: 0;
+    }
+
+    /* Compact topbar for iPad */
+    .mobile-topbar {
+        display: flex !important;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        background: var(--bg-layer);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+        z-index: 100;
+    }
+    .mobile-topbar .logo-text {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+    }
+    .mobile-topbar .menu-btn {
+        width: 34px; height: 34px;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 5px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .mobile-topbar .menu-btn span {
+        display: block;
+        width: 16px; height: 1.5px;
+        background: var(--text-secondary);
+        border-radius: 2px;
+        transition: background .15s;
+    }
+    .mobile-topbar .menu-btn:hover span { background: var(--text-primary); }
+    .mobile-topbar .topbar-ticker {
+        flex: 1;
+        font-size: 14px; font-weight: 600;
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .mobile-topbar .topbar-run-btn {
+        padding: 7px 14px;
+        background: var(--accent-pink);
+        border: none; border-radius: 7px;
+        color: #fff; font-size: 13px; font-weight: 600;
+        cursor: pointer; white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* The old sidebar toggle button — hide on small screens */
+    .sidebar-toggle-btn { display: none !important; }
+
+    /* Scrollable report area */
+    #results-view, .center-view.active, #loading-view.active {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 16px 24px;
+    }
+    #welcome-view.active {
+        padding: 32px 20px;
+    }
+    .welcome-box { max-width: 100%; }
+
+    /* Decision header — stack vertically */
     .quote-bar-layout {
         flex-direction: column;
-        align-items: stretch;
+        gap: 12px;
+        padding: 14px 16px;
     }
-    .quote-chart {
-        height: 100px;
+    .quote-chart { height: 120px; }
+    .quote-scale { display: none; } /* hide rating scale on tablet */
+
+    /* KPI strip — 4 columns */
+    .kpi-strip {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
     }
+
+    /* Results layout — remove TOC sidebar */
+    .results-layout-wrapper {
+        flex-direction: column;
+        gap: 16px;
+    }
+    .toc-summary { display: none; }
+    .toc-sidebar {
+        display: none; /* hidden on tablet; user scrolls the report */
+    }
+    .report-flow-container {
+        max-width: 100%;
+    }
+    .markdown-content {
+        max-width: 100%;
+    }
+
+    /* Debate columns → stacked */
+    .debate-columns { flex-direction: column; }
+    .debate-col { width: 100%; }
+
+    /* Risk 3-col → 1-col */
+    .risk-three-col { grid-template-columns: 1fr; }
+
+    /* Loading pipeline list — tighter */
+    .pipeline-header { display: none; }
 }
-@media (max-width: 640px) {
+
+
+/* ── Mobile ────────────────────────────────────────────── ≤ 767px ── */
+@media (max-width: 767px) {
+
+    /* Full viewport height accounting for mobile browser chrome */
+    html, body { height: 100%; height: -webkit-fill-available; }
+    .app-container { height: 100vh; height: -webkit-fill-available; }
+
+    /* Sidebar full-width on mobile */
+    .sidebar-config {
+        width: 100% !important;
+        max-width: 340px !important;
+    }
+
+    /* Welcome screen */
+    .welcome-box h2 { font-size: 18px; }
+    .welcome-box p  { font-size: 13px; }
+    .feature-chips  { gap: 6px; }
+    .chip { font-size: 11px; padding: 4px 10px; }
+
+    /* Decision card */
+    .ticker-title { font-size: 28px; }
+    .action-value { font-size: 20px; }
+    .quote-chart  { height: 100px; }
+
+    /* KPI strip → 2 columns on phone */
     .kpi-strip {
         grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
     }
+    .kpi-val { font-size: 11.5px; }
+    .kpi-sub { font-size: 11px; }
+
+    /* Report sections */
+    #results-view, .center-view.active, #loading-view.active {
+        padding: 10px 12px 80px; /* bottom padding for the floating button */
+    }
+
+    /* Floating action button: "分析中" / "开始分析" lives here on mobile.
+       The sidebar form is hidden; the fab submits the same form. */
+    .mobile-fab {
+        display: flex !important;
+        position: fixed;
+        bottom: 20px; left: 50%;
+        transform: translateX(-50%);
+        width: calc(100% - 32px);
+        max-width: 400px;
+        z-index: 150;
+        background: var(--accent-pink);
+        color: #fff;
+        border: none; border-radius: 14px;
+        font-size: 15px; font-weight: 700;
+        padding: 15px;
+        cursor: pointer;
+        box-shadow: 0 4px 24px rgba(255,45,85,.45);
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+    }
+    .mobile-fab:disabled { opacity: .6; }
+
+    /* Pipeline progress */
+    .pipeline-list { font-size: 12px; }
+    .loader-box h2 { font-size: 16px; }
+    .loader-box p  { font-size: 12.5px; }
+    .hud-topline   { font-size: 11px; gap: 4px; }
+
+    /* Markdown reading */
+    .markdown-content {
+        font-size: calc(14px * var(--reading-scale));
+        max-width: 100%;
+    }
+
+    /* Decision reasoning collapsible */
+    .decision-reasoning-collapsible { padding: 10px 14px; }
+
+    /* Console */
+    .loading-console { font-size: 11px; }
+
+    /* Tabs */
+    .tabs-nav { gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tab-btn   { font-size: 11px; padding: 6px 10px; white-space: nowrap; }
+
+    /* Raw output */
+    .raw-output { font-size: 10.5px; }
+
+    /* Stop button */
+    .btn-stop { width: 100%; }
+    .loading-actions { flex-direction: column; }
 }
+
+/* ── Small phone ───────────────────────────────────────── ≤ 375px ── */
+@media (max-width: 375px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    .mobile-topbar { padding: 8px 12px; }
+    .mobile-topbar .logo-text { display: none; }
+    .ticker-title { font-size: 24px; }
+}
+
+
+/* ==================================================================
+   Electronic Screen Themes (Flat LED & Curved LED)
+   ================================================================== */
+
+/* 1. Flat LED Theme variables and base styles */
+.screen-flat-led {
+    --font-main: var(--font-mono);
+    --font-display: var(--font-mono);
+    
+    --bg-base: #020508;
+    --bg-layer: #060b12;
+    --bg-card: #0a111c;
+    --border-color: #12283f;
+    
+    --text-primary: #d4e5f7;
+    --text-body: #a5bdd6;
+    --text-secondary: #588ec7;
+    --text-muted: #2f4e73;
+    
+    --signal-buy: #00ff66;   /* Neon fluorescent green */
+    --signal-sell: #ff3366;  /* Neon hot pink/red */
+    --signal-hold: #ffcc00;  /* Neon amber gold */
+    
+    --accent-pink: #ff3366;
+    --accent-blue: #00ccff;  /* Cyber cyan */
+}
+
+/* Flat LED glow and terminal elements overrides */
+.screen-flat-led body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+}
+
+.screen-flat-led .ticker-title {
+    color: #ffffff;
+    text-shadow: 0 0 5px #fff, 0 0 15px var(--accent-blue), 0 0 25px var(--accent-blue);
+}
+
+.screen-flat-led .action-value {
+    text-shadow: 0 0 6px currentColor;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.4), inset 0 0 6px rgba(255, 255, 255, 0.1);
+    border: 1px solid currentColor;
+}
+
+/* Make cards look like high-contrast screen grids */
+.screen-flat-led .glass-card,
+.screen-flat-led .report-box,
+.screen-flat-led .sidebar-config,
+.screen-flat-led .loading-console-container {
+    background: rgba(6, 11, 18, 0.95) !important;
+    border-color: #12283f !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 12px rgba(0, 204, 255, 0.04) !important;
+}
+
+.screen-flat-led .pane-header-title {
+    border-bottom: 1px solid rgba(0, 204, 255, 0.15) !important;
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.15);
+}
+
+/* Neon styled logs & console screen */
+.screen-flat-led .loading-console {
+    background-color: #010306 !important;
+    color: #00ff66 !important;
+    text-shadow: 0 0 4px rgba(0, 255, 102, 0.6);
+    border-color: #0a1f13 !important;
+    font-family: var(--font-mono) !important;
+}
+
+.screen-flat-led .console-line {
+    color: #00ff66 !important;
+}
+
+.screen-flat-led .console-header {
+    background-color: #04080e !important;
+    border-color: #12283f !important;
+}
+
+/* Neon buttons and inputs controls */
+.screen-flat-led input,
+.screen-flat-led select {
+    background-color: #010305 !important;
+    border-color: #12283f !important;
+    color: #00ffcc !important;
+    text-shadow: 0 0 4px rgba(0, 255, 204, 0.4);
+}
+
+.screen-flat-led input:focus,
+.screen-flat-led select:focus {
+    border-color: var(--accent-blue) !important;
+    box-shadow: 0 0 8px rgba(0, 204, 255, 0.4) !important;
+}
+
+.screen-flat-led .btn-primary {
+    background-color: var(--signal-buy) !important;
+    color: #020508 !important;
+    font-weight: 800;
+    border: 1px solid #00ff66 !important;
+    box-shadow: 0 0 12px rgba(0, 255, 102, 0.45) !important;
+    text-shadow: none !important;
+}
+
+.screen-flat-led .btn-primary:hover {
+    background-color: #00ff66 !important;
+    box-shadow: 0 0 18px rgba(0, 255, 102, 0.7) !important;
+}
+
+/* Sidebar navigation glows */
+.screen-flat-led .toc-link.active {
+    color: var(--accent-blue) !important;
+    text-shadow: 0 0 6px var(--accent-blue);
+}
+
+.screen-flat-led .toc-link.active span {
+    color: var(--accent-blue) !important;
+    text-shadow: 0 0 6px var(--accent-blue);
+}
+
+.screen-flat-led .lang-btn.active {
+    color: var(--accent-blue) !important;
+    text-shadow: 0 0 5px var(--accent-blue);
+}
+
+.screen-flat-led .rc-btn[aria-current="true"] {
+    background: rgba(0, 204, 255, 0.15) !important;
+    color: var(--accent-blue) !important;
+    text-shadow: 0 0 4px var(--accent-blue);
+}
+
+/* Cyber styled scrollbars */
+.screen-flat-led *::-webkit-scrollbar-thumb {
+    background: #12283f !important;
+    border: 1px solid var(--accent-blue) !important;
+}
+
+/* Luminous Pipeline LEDs */
+.screen-flat-led .pipeline-stage.running .stage-dot {
+    background: var(--accent-blue) !important;
+    box-shadow: 0 0 10px var(--accent-blue), 0 0 18px var(--accent-blue) !important;
+}
+
+.screen-flat-led .pipeline-stage.done .stage-dot {
+    background: var(--signal-buy) !important;
+    box-shadow: 0 0 8px var(--signal-buy) !important;
+}
+
+/* Subpixel grid mesh/scanline overlay covering viewport */
+.screen-flat-led::after {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: 
+        linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%),
+        linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.05));
+    background-size: 100% 3px, 6px 100%;
+    z-index: 99999;
+    pointer-events: none;
+    animation: led-hum 10s infinite ease-in-out;
+}
+
+@keyframes led-hum {
+    0%, 100% { opacity: 0.28; }
+    50% { opacity: 0.35; }
+}
+
+/* 2. Curved LED Theme perspective wrap & reflections */
+.screen-curved-led .app-container {
+    perspective: 2000px;
+    transform-style: preserve-3d;
+}
+
+.screen-curved-led .sidebar-config {
+    transform: rotateY(3.5deg) translateZ(8px);
+    transform-origin: right center;
+    box-shadow: 15px 0 35px rgba(0, 0, 0, 0.6) !important;
+}
+
+.screen-curved-led .main-content {
+    transform: rotateY(-1.8deg) translateZ(12px) scale(0.982);
+    transform-origin: left center;
+    box-shadow: -15px 0 35px rgba(0, 0, 0, 0.6) !important;
+    border-radius: 12px !important;
+    border-left: 1px solid rgba(0, 204, 255, 0.12) !important;
+}
+
+/* Curved glossy glare/reflection diagonal overlay */
+.screen-curved-led::before {
+    content: "";
+    position: fixed;
+    top: -50%; left: -50%; width: 200%; height: 200%;
+    background: linear-gradient(
+        55deg,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(255, 255, 255, 0.01) 45%,
+        rgba(255, 255, 255, 0.04) 48%,
+        rgba(255, 255, 255, 0.08) 50%,
+        rgba(255, 255, 255, 0.04) 52%,
+        rgba(255, 255, 255, 0.01) 55%,
+        rgba(255, 255, 255, 0) 60%
+    );
+    transform: rotate(-12deg);
+    z-index: 100000;
+    pointer-events: none;
+    animation: reflection-sweep 15s infinite ease-in-out;
+}
+
+@keyframes reflection-sweep {
+    0%, 100% { transform: translate(-4%, -4%) rotate(-12deg); }
+    50% { transform: translate(4%, 4%) rotate(-12deg); }
+}
+
+/* Dark corner vignette shadow layer inside app */
+.screen-curved-led .app-container::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.9), inset 0 0 200px rgba(0, 80, 160, 0.18);
+    pointer-events: none;
+    z-index: 99998;
+}
+

@@ -24,6 +24,12 @@
                     <button class="rc-btn" data-scale="1.15">A+</button>
                     <button class="rc-btn" data-scale="1.3">A++</button>
                 </div>
+                <div class="screen-controls" title="屏幕模式 / Screen Mode" style="margin-top: 6px; width: 100%; display: flex; align-items: center; gap: 4px;">
+                    <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-right: 4px;" data-zh="屏幕" data-en="SCREEN">屏幕</span>
+                    <button id="screen-btn-default" class="rc-btn" data-mode="default" aria-current="true" data-zh="默认" data-en="Default">默认</button>
+                    <button id="screen-btn-flat" class="rc-btn" data-mode="flat-led" data-zh="平面LED" data-en="Flat LED">平面LED</button>
+                    <button id="screen-btn-curved" class="rc-btn" data-mode="curved-led" data-zh="柔性LED" data-en="Curved LED">柔性LED</button>
+                </div>
             </div>
 
             <form id="config-form" class="config-form">
