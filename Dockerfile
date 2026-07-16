@@ -1,28 +1,22 @@
-FROM python:3.12-slim AS builder
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-WORKDIR /build
-COPY . .
-RUN pip install --no-cache-dir .
-
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
 
-RUN useradd --create-home appuser \
- && install -d -m 0755 -o appuser -g appuser /home/appuser/.tradingagents
-USER appuser
-WORKDIR /home/appuser/app
+# Install dependencies first (layer cache)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY --from=builder --chown=appuser:appuser /build .
+# Install the package itself
+COPY . .
+RUN pip install --no-cache-dir -e .
 
-ENTRYPOINT ["tradingagents"]
+# Railway injects $PORT at runtime
+ENV TRADINGAGENTS_WEB_HOST=0.0.0.0
+
+EXPOSE 8000
+
+CMD ["python", "web_server.py"]
