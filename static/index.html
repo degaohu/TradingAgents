@@ -48,34 +48,12 @@
                     <div class="settings-row">
                         <span class="settings-label" data-zh="主题" data-en="THEME">主题</span>
                         <div class="theme-control-wrapper">
-                            <!-- Toggle switch showing current theme state, plus the interactive pull chain! -->
-                            <div class="theme-icon-indicator" id="theme-icon-indicator">
-                                <span class="theme-icon-span dark-icon active" id="theme-dark-icon">🌙</span>
-                                <span class="theme-icon-span light-icon" id="theme-light-icon">☀️</span>
+                            <div class="segmented-control" title="配色主题 / Color theme">
+                                <button id="theme-btn-dark" class="rc-btn" data-theme="dark" aria-current="true">🌙</button>
+                                <button id="theme-btn-light" class="rc-btn" data-theme="light">☀️</button>
                             </div>
-                            
-                            <!-- Pull chain element -->
-                            <div class="pull-chain-wrapper" id="theme-pull-chain" title="拉绳切换主题 / Pull string to switch theme">
-                                <div class="pull-chain-string"></div>
-                                <div class="pull-chain-ring"></div>
-                            </div>
-                            
-                            <!-- Hidden legacy buttons to prevent breaking existing click event listeners -->
-                            <button id="theme-btn-dark" data-theme="dark" style="display:none"></button>
-                            <button id="theme-btn-light" data-theme="light" style="display:none"></button>
-                            
                             <!-- Notif toggle button aligned neatly to the right of the row -->
-                            <button id="notif-toggle-btn" class="rc-btn notif-btn" title="桌面通知 / Desktop notifications">🔔</button>
-                        </div>
-                    </div>
-
-                    <!-- Screen Mode Row -->
-                    <div class="settings-row">
-                        <span class="settings-label" data-zh="屏幕" data-en="SCREEN">屏幕</span>
-                        <div class="screen-controls segmented-control" title="屏幕模式 / Screen Mode">
-                            <button id="screen-btn-default" class="rc-btn" data-mode="default" aria-current="true" data-zh="默认" data-en="Default">默认</button>
-                            <button id="screen-btn-flat" class="rc-btn" data-mode="flat-led" data-zh="平面LED" data-en="Flat LED">平面LED</button>
-                            <button id="screen-btn-curved" class="rc-btn" data-mode="curved-led" data-zh="柔性LED" data-en="Curved LED">柔性LED</button>
+                            <button id="notif-toggle-btn" class="rc-btn notif-btn" title="桌面通知 / Desktop notifications" style="margin-left: 8px;">🔔</button>
                         </div>
                     </div>
                 </div>
@@ -126,7 +104,7 @@
                 </div>
 
                 <!-- Advanced knobs — collapsed by default; the preset writes them. -->
-                <details class="advanced-config">
+                <details class="advanced-config" id="advanced-config-panel" style="display:none;">
                     <summary data-zh="高级参数" data-en="Advanced">高级参数</summary>
                     <div class="form-group">
                         <label for="max_debate_rounds" data-zh="辩论轮数" data-en="Debate Rounds">辩论轮数</label>
@@ -192,6 +170,12 @@
 
         <!-- Main Workstation Viewport -->
         <main class="main-content">
+            <!-- Pull-chain light switch hanging from the top right corner -->
+            <div class="pull-chain-wrapper" id="theme-pull-chain" title="拉绳切换主题 / Pull string to switch theme">
+                <div class="pull-chain-string"></div>
+                <div class="pull-chain-ring"></div>
+            </div>
+
             <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-label="Toggle Sidebar">◀</button>
 
             <!-- Welcome View -->

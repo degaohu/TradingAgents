@@ -147,6 +147,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 usernameEl.textContent = me.username;
                 usernameEl.title = me.username;
                 if (me.is_admin && adminLink) adminLink.style.display = '';
+                const advPanel = document.getElementById('advanced-config-panel');
+                if (advPanel && me.is_admin) {
+                    advPanel.style.display = '';
+                }
                 if (me.version && versionEl) versionEl.textContent = 'v' + me.version;
                 updateQuotaUI(me);
             })

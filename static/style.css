@@ -3560,67 +3560,105 @@ body.theme-light .theme-icon-indicator {
 
 /* Pull Chain styling */
 .pull-chain-wrapper {
-    position: relative;
-    display: inline-block;
+    position: absolute;
+    top: 0;
+    right: 28px;
+    z-index: 100;
+    width: 36px;
+    height: 100px;
     cursor: pointer;
-    width: 32px;
-    height: 48px;
-    margin-left: 20px;
     user-select: none;
 }
 
 .pull-chain-string {
     position: absolute;
-    top: -12px;
-    left: 15px;
-    width: 1.5px;
-    height: 32px;
-    background: linear-gradient(to bottom, #888, #555);
+    top: 0;
+    left: 16px;
+    width: 4px;
+    height: 75px;
+    /* Skeuomorphic beaded metal chain (brass color gradient) */
+    background: repeating-linear-gradient(
+        to bottom,
+        #d4af37 0px, #d4af37 4px,
+        #aa7c11 4px, #aa7c11 6px
+    );
+    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.4);
+    border-radius: 2px;
     transform-origin: top center;
 }
 
 .pull-chain-ring {
     position: absolute;
-    top: 18px;
-    left: 8px;
-    width: 15px;
-    height: 15px;
+    top: 71px;
+    left: 6px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    border: 2.5px solid #888;
-    background: transparent;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    /* Glossy 3D brass ring loop */
+    border: 4.5px solid #d4af37;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, rgba(212, 175, 55, 0.2) 60%, rgba(0, 0, 0, 0.5) 100%);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.6);
+    cursor: pointer;
     transition: background-color 0.2s, border-color 0.2s;
 }
 
-body.theme-light .pull-chain-ring {
-    border-color: #555;
+/* Loop connection detail at the top of the ring */
+.pull-chain-ring::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 8px;
+    border-radius: 2px;
+    background: #aa7c11;
+    border: 1px solid #d4af37;
 }
 
-/* Day/Night pull animations */
+body.theme-light .pull-chain-string {
+    background: repeating-linear-gradient(
+        to bottom,
+        #c0c0c0 0px, #c0c0c0 4px,  /* Silver beads in light mode for contrast */
+        #707070 4px, #707070 6px
+    );
+}
+
+body.theme-light .pull-chain-ring {
+    border-color: #c0c0c0;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(192, 192, 192, 0.2) 60%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+body.theme-light .pull-chain-ring::before {
+    background: #707070;
+    border-color: #c0c0c0;
+}
+
+/* Day/Night pull animations - larger snap-back translations */
 @keyframes pull-snap-back-ring {
     0% { transform: translateY(0); }
-    30% { transform: translateY(14px); }
-    55% { transform: translateY(-4px); }
-    75% { transform: translateY(2px); }
-    90% { transform: translateY(-1px); }
+    30% { transform: translateY(28px); }
+    55% { transform: translateY(-10px); }
+    75% { transform: translateY(5px); }
+    90% { transform: translateY(-2px); }
     100% { transform: translateY(0); }
 }
 
 @keyframes pull-snap-back-string {
-    0% { height: 32px; }
-    30% { height: 46px; }
-    55% { height: 28px; }
-    75% { height: 34px; }
-    90% { height: 31px; }
-    100% { height: 32px; }
+    0% { height: 75px; }
+    30% { height: 103px; }
+    55% { height: 65px; }
+    75% { height: 80px; }
+    90% { height: 73px; }
+    100% { height: 75px; }
 }
 
 .pull-chain-wrapper.animating .pull-chain-ring {
-    animation: pull-snap-back-ring 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    animation: pull-snap-back-ring 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .pull-chain-wrapper.animating .pull-chain-string {
-    animation: pull-snap-back-string 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    animation: pull-snap-back-string 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 /* Desktop notifications toggle button */
