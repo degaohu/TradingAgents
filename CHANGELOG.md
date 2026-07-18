@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.1] — 2026-07-18
+
+Polishing and monitoring release: refined the mobile layout, added backend IP geolocation resolution, implemented a live user heartbeat tracker, and resolved charting visual collisions.
+
+### Added
+
+- **Backend IP Geolocation Caching.** Persistently caches IP physical regions (Country, Region, City) in SQLite. Resolves locations asynchronously in background daemon threads during activity logging so web requests are never blocked.
+- **Live User Session Tracker.** Pings `/api/heartbeat` every 10 seconds to monitor active visitors, their page view state (welcome, running, results dashboard, reader mode), focus status, specific stocks they are viewing, and active session dwell time. Displays a clean, real-time "Live Users" monitoring grid at the top of the admin panel.
+- **Project Version Visibility.** Automatically fetches and exposes the current `pyproject.toml` version next to the logo on both mobile top bar and desktop sidebar.
+
+### Changed
+
+- **Clean Mobile Reading view.** Hides the horizontal configuration header and "Start Analysis" button completely on mobile devices when results are active or loading is underway.
+- **Smart Mobile Reset.** Tapping the active "Analyze" tab at the bottom navigation resets the view to the Welcome screen, allowing users to start a new analysis.
+- **Rating Slider Alignment.** Shifted the 5-point rating text labels below the slider track and styled the pointer pin as a modern pink badge with soft shadow to prevent text overlaps.
+
+### Fixed
+
+- **Price Chart Text Collisions.** Price labels (Stop, Target, Entry) automatically shift vertically to stack if their values are identical or close, preventing visual text overlap.
+- **X-Axis Date Label Overlaps.** Date ticks on the X-axis are automatically hidden at boundary end-points if the trade date marker sits within 12% of the chart edges.
+- **Distraction-free Reader Mode.** Sidebar, configuration form, and collapse buttons are hidden on all screens when Editorial Reader Mode is active.
+
+## [0.4.0] — 2026-07-17
+
+Major Web UI Dashboard and A-Share Sentiment release: introduced multi-user login controls, persistent history, mobile bottom tab navigation, and A-share autosuggest normalizations.
+
+### Added
+
+- **Interactive Web UI Terminal.** Full-featured trading terminal dashboard displaying KPI metrics, decision scales, reasoning outlines, and responsive light/dark themes.
+- **Multi-user authentication.** Implemented sign-in cookies, session verification, individual report quotas, and username attribution.
+- **Interactive Admin console.** Enables managing user profiles, adjusting report quotas, resetting passwords, and viewing historical access logs.
+- **Chinese A-share support.** Support for Eastmoney remote fallbacks and normalization of 6-digit stock codes to .SS/.SZ/.BJ.
+- **PWA offline support.** Manifest, offline service worker shell caching, and desktop notification opt-ins on task completion.
+
 ## [0.3.1] — 2026-07-05
 
 Correctness and stability patch: data look-ahead, graph-router crash-safety,
