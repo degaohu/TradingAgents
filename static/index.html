@@ -172,6 +172,19 @@
         <main class="main-content">
             <!-- Pull-chain light switch hanging from the top right corner -->
             <div class="pull-chain-wrapper" id="theme-pull-chain" title="拉绳切换主题 / Pull string to switch theme">
+                <div class="pull-chain-bulb" id="theme-pull-bulb">
+                    <!-- A beautiful skeuomorphic light bulb SVG -->
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <!-- Socket/base of the bulb -->
+                        <path d="M9 2h6v3H9z" fill="#666" />
+                        <!-- Threading -->
+                        <path d="M10 5h4v1.5h-4z M10.5 6.5h3v1.5h-3z" fill="#555" />
+                        <!-- Glass bulb outline and fill -->
+                        <path class="bulb-glass" d="M12 22c4.418 0 8-3.582 8-8 0-2.88-1.523-5.4-3.803-6.8L15.5 12h-7l-.697-4.8C5.523 8.6 4 11.12 4 14c0 4.418 3.582 8 8 8z" fill="rgba(255, 255, 255, 0.05)" stroke="#555" stroke-width="1.5" />
+                        <!-- Filament -->
+                        <path class="bulb-filament" d="M10 14l2-4 2 4" stroke="#444" stroke-width="1.5" fill="none" />
+                    </svg>
+                </div>
                 <div class="pull-chain-string"></div>
                 <div class="pull-chain-ring"></div>
             </div>
@@ -658,9 +671,10 @@
                     <!-- Report navigation (TOC). Desktop: draggable floating panel;
                          mobile: bottom sheet + floating pill. See initReportNav(). -->
                     <aside class="toc-sidebar" id="toc-sidebar">
-                        <div class="toc-drag-handle" id="toc-drag-handle">
+                        <div class="toc-header">
                             <span class="toc-title" data-zh="报告导航" data-en="CONTENTS">报告导航</span>
-                            <button class="toc-collapse-btn" id="toc-collapse-btn" type="button" aria-label="Collapse">−</button>
+                            <span id="toc-decision-badge" class="toc-decision-badge neutral">—</span>
+                            <button class="toc-collapse-btn" id="toc-collapse-btn" type="button" aria-label="Close">×</button>
                         </div>
                         <div class="toc-body" id="toc-body">
                         <!-- Decision Snapshot (populated by displayResults) -->

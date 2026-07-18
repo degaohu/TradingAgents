@@ -1090,44 +1090,63 @@ body {
     background: var(--bg-layer);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+    box-shadow: var(--shadow-card);
     overflow: hidden;
+    opacity: 0.65;
+    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
-.toc-drag-handle {
+.toc-sidebar:hover {
+    opacity: 1.0;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+}
+.toc-header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
-    cursor: grab;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--border-color);
-    user-select: none;
-    touch-action: none;
 }
-.toc-sidebar.dragging .toc-drag-handle { cursor: grabbing; }
-.toc-collapse-btn {
-    flex-shrink: 0;
-    width: 20px; height: 20px;
-    display: flex; align-items: center; justify-content: center;
-    background: transparent;
-    border: 1px solid var(--border-color);
+.toc-title {
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+.toc-decision-badge {
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 2px 6px;
     border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-.toc-collapse-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.toc-decision-badge.bull {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.toc-decision-badge.bear {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+}
+.toc-decision-badge.neutral {
+    background: rgba(127, 140, 141, 0.15);
+    color: #95a5a6;
+    border: 1px solid rgba(127, 140, 141, 0.3);
+}
+.toc-sidebar .toc-collapse-btn {
+    display: none; /* hidden on desktop */
+}
 .toc-body {
     padding: 14px 16px;
     overflow-y: auto;
 }
-.toc-sidebar.collapsed {
-    width: auto;
-}
-.toc-sidebar.collapsed .toc-drag-handle { border-bottom: none; }
-.toc-sidebar.collapsed .toc-body { display: none; }
 
 /* Mobile report-nav: a floating pill that shows the current section (scroll
    "定位") and opens the nav as a bottom sheet. Both hidden on desktop —
@@ -1877,21 +1896,26 @@ body {
         z-index: 320;
         box-shadow: 0 -10px 44px rgba(0,0,0,.6);
         padding-bottom: env(safe-area-inset-bottom, 0px);
+        opacity: 1 !important; /* Full opacity on mobile sheet */
     }
     .toc-sidebar.sheet-open { transform: translateY(0); }
     /* Desktop's collapse class is meaningless here — the sheet's open/closed
        state is the visibility control; keep the body shown when open. */
     .toc-sidebar.collapsed { width: 100% !important; }
     .toc-sidebar.collapsed .toc-body { display: block; }
-    .toc-sidebar.collapsed .toc-drag-handle { border-bottom: 1px solid var(--border-color); }
-    .toc-drag-handle {
+    .toc-sidebar.collapsed .toc-header { border-bottom: 1px solid var(--border-color); }
+    .toc-header {
         cursor: default;         /* not draggable on mobile */
         padding: 14px 18px;
+        border-bottom: 1px solid var(--border-color);
     }
-    .toc-drag-handle .toc-title { font-size: 12px; }
+    .toc-header .toc-title { font-size: 12px; }
     .toc-collapse-btn {
+        display: flex !important; /* Force show the close button on mobile sheet */
         width: 28px; height: 28px;
         font-size: 18px;
+        align-items: center;
+        justify-content: center;
     }
     .toc-body {
         padding: 12px 18px 20px;
@@ -3699,4 +3723,49 @@ body,
                 border-color 0.8s cubic-bezier(0.25, 1, 0.5, 1),
                 box-shadow 0.8s cubic-bezier(0.25, 1, 0.5, 1),
                 border-right-color 0.8s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
+/* Skeuomorphic Light Bulb styling */
+.pull-chain-bulb {
+    position: absolute;
+    top: -2px;
+    left: 6px;
+    width: 24px;
+    height: 24px;
+    z-index: 101;
+}
+
+.pull-chain-bulb svg {
+    overflow: visible;
+}
+
+/* Glass bulb styling (off by default in Dark mode) */
+.pull-chain-bulb svg .bulb-glass {
+    fill: rgba(255, 255, 255, 0.05);
+    stroke: #555;
+    stroke-width: 1.5;
+    transition: fill 0.8s cubic-bezier(0.25, 1, 0.5, 1), 
+                stroke 0.8s cubic-bezier(0.25, 1, 0.5, 1), 
+                filter 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.pull-chain-bulb svg .bulb-filament {
+    stroke: #444;
+    transition: stroke 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Light mode bulb on glowing state */
+body.theme-light .pull-chain-bulb svg .bulb-glass {
+    fill: #ffd700;
+    stroke: #ff9f0a;
+    filter: drop-shadow(0 0 6px #ffd700) drop-shadow(0 0 12px rgba(255, 215, 0, 0.6));
+}
+
+body.theme-light .pull-chain-bulb svg .bulb-filament {
+    stroke: #ff9f0a;
+}
+
+/* Clean fix for HTML5 [hidden] display override */
+.confidence-gauge[hidden] {
+    display: none !important;
 }

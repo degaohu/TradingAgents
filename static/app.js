@@ -892,6 +892,21 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("final-action").textContent = currentLang === 'zh' ? "持有" : "HOLD";
         }
 
+        const tocBadge = document.getElementById("toc-decision-badge");
+        if (tocBadge) {
+            tocBadge.className = "toc-decision-badge";
+            if (action.includes("BUY")) {
+                tocBadge.classList.add("bull");
+                tocBadge.textContent = currentLang === 'zh' ? "看多 BULL" : "BULL";
+            } else if (action.includes("SELL")) {
+                tocBadge.classList.add("bear");
+                tocBadge.textContent = currentLang === 'zh' ? "看空 BEAR" : "BEAR";
+            } else {
+                tocBadge.classList.add("neutral");
+                tocBadge.textContent = currentLang === 'zh' ? "中性 NEUTRAL" : "NEUTRAL";
+            }
+        }
+
         const confidenceEl = document.getElementById("decision-confidence");
         const RATING_MAP = {
             "Strong Buy": { "zh": "强烈买入", "en": "Strong Buy" },
@@ -2522,25 +2537,14 @@ function initTOCScroller() {
 }
 
 // ── Report navigation ────────────────────────────────────────────────
-// Two presentations of the same nav list (the CSS switches at ≤1024px):
-//   • Desktop: a draggable, collapsible floating panel (position:fixed,
-//     position persisted to localStorage) that doesn't steal layout width
-//     from the report column.
-//   • Mobile:  a bottom sheet opened by a floating pill (.toc-fab). The
-//     pill always shows the current section (updated from the scroll spy
-//     in initTOCScroller via window.__taOnSectionChange), so the reader
-//     can see where they are without opening anything — the "定位" ask.
 (function initReportNav() {
     const panel = document.getElementById('toc-sidebar');
-    const handle = document.getElementById('toc-drag-handle');
-    const toggleBtn = document.getElementById('toc-collapse-btn');
-    if (!panel || !handle || !toggleBtn) return;
+    if (!panel) return;
 
     const TABLET_BP = 1024;
     const isMobile = () => window.innerWidth <= TABLET_BP;
 
-    // ── Mobile: floating pill + backdrop (created once; hidden on desktop
-    //    via CSS). ──
+    // ── Mobile: floating pill + backdrop (created once; hidden on desktop via CSS). ──
     const fab = document.createElement('button');
     fab.className = 'toc-fab';
     fab.id = 'toc-fab';
@@ -2581,8 +2585,8 @@ function initTOCScroller() {
 
     fab.addEventListener('click', openSheet);
     backdrop.addEventListener('click', closeSheet);
-    // Tapping any nav link closes the sheet (its own smooth-scroll handler
-    // in initTOCScroller still runs — separate listener, both fire).
+    
+    // Tapping any nav link closes the sheet
     const navEl = panel.querySelector('.toc-nav');
     if (navEl) {
         navEl.addEventListener('click', (e) => {
@@ -2590,8 +2594,7 @@ function initTOCScroller() {
         });
     }
 
-    // Keep the pill label in sync with the current section (called by the
-    // scroll spy). Falls back to the default label if the id isn't found.
+    // Keep the pill label in sync with the current section
     window.__taOnSectionChange = (activeId) => {
         const label = fab.querySelector('.fab-label');
         if (!label) return;
@@ -2610,115 +2613,20 @@ function initTOCScroller() {
     }
     updateFabVisibility();
 
-    // ── Desktop: draggable + collapsible floating panel ──
-    const POS_KEY = 'tradingagents.tocPosition';
-    const COLLAPSED_KEY = 'tradingagents.tocCollapsed';
-    const MARGIN = 8;
-
-    function clamp(pos) {
-        const maxLeft = window.innerWidth - panel.offsetWidth - MARGIN;
-        const maxTop = window.innerHeight - handle.offsetHeight - MARGIN;
-        return {
-            left: Math.min(Math.max(MARGIN, pos.left), Math.max(MARGIN, maxLeft)),
-            top: Math.min(Math.max(MARGIN, pos.top), Math.max(MARGIN, maxTop)),
-        };
-    }
-    function applyPosition(pos) {
-        panel.style.left = pos.left + 'px';
-        panel.style.top = pos.top + 'px';
-        panel.style.right = 'auto';
-    }
-    function setCollapsed(collapsed) {
-        panel.classList.toggle('collapsed', collapsed);
-        toggleBtn.textContent = collapsed ? '+' : '−';
-        localStorage.setItem(COLLAPSED_KEY, String(collapsed));
-    }
-
-    function initDesktopPosition() {
-        let savedPos = null;
-        try { savedPos = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); } catch (e) { /* ignore */ }
-        requestAnimationFrame(() => {
-            const initial = savedPos || { left: window.innerWidth - panel.offsetWidth - 24, top: 100 };
-            applyPosition(clamp(initial));
-        });
-        const savedCollapsed = localStorage.getItem(COLLAPSED_KEY);
-        setCollapsed(savedCollapsed === 'true'); // desktop first-run: expanded
-    }
-
-    if (isMobile()) {
-        panel.classList.remove('collapsed');
-        toggleBtn.textContent = '×';   // acts as the sheet's close button
-    } else {
-        initDesktopPosition();
-    }
-
-    toggleBtn.addEventListener('click', () => {
-        if (isMobile()) { closeSheet(); return; }
-        setCollapsed(!panel.classList.contains('collapsed'));
-    });
-
-    // Dragging (desktop only) — mouse + touch through one set of callbacks.
-    let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-    function pointFrom(e) { return e.touches ? e.touches[0] : e; }
-    function onDragStart(e) {
-        if (isMobile() || e.target === toggleBtn) return;
-        dragging = true;
-        const p = pointFrom(e);
-        startX = p.clientX; startY = p.clientY;
-        const rect = panel.getBoundingClientRect();
-        startLeft = rect.left; startTop = rect.top;
-        panel.classList.add('dragging');
-        if (e.cancelable) e.preventDefault();
-    }
-    function onDragMove(e) {
-        if (!dragging) return;
-        const p = pointFrom(e);
-        applyPosition(clamp({ left: startLeft + (p.clientX - startX), top: startTop + (p.clientY - startY) }));
-        if (e.cancelable) e.preventDefault();
-    }
-    function onDragEnd() {
-        if (!dragging) return;
-        dragging = false;
-        panel.classList.remove('dragging');
-        const rect = panel.getBoundingClientRect();
-        localStorage.setItem(POS_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
-    }
-
-    handle.addEventListener('mousedown', onDragStart);
-    window.addEventListener('mousemove', onDragMove);
-    window.addEventListener('mouseup', onDragEnd);
-    handle.addEventListener('touchstart', onDragStart, { passive: false });
-    window.addEventListener('touchmove', onDragMove, { passive: false });
-    window.addEventListener('touchend', onDragEnd);
-
-    // Adapt when the viewport changes. Crucially, only re-setup when the
-    // mode actually flips (desktop↔mobile) — mobile browsers fire `resize`
-    // constantly as the URL bar shows/hides on scroll, and closing the
-    // sheet on every one of those would make it unusable.
     let wasMobile = isMobile();
     window.addEventListener('resize', () => {
         const nowMobile = isMobile();
-        if (nowMobile === wasMobile) {
-            // Same mode: desktop needs re-clamping so a shrunk window keeps
-            // the panel on-screen; mobile needs nothing (sheet stays as-is).
-            if (!nowMobile) {
-                const rect = panel.getBoundingClientRect();
-                applyPosition(clamp({ left: rect.left, top: rect.top }));
+        if (wasMobile !== nowMobile) {
+            wasMobile = nowMobile;
+            if (nowMobile) {
+                const toggleBtn = document.getElementById('toc-collapse-btn');
+                if (toggleBtn) toggleBtn.textContent = '×';
+            } else {
+                closeSheet();
+                panel.style.left = '';
+                panel.style.top = '';
+                panel.style.right = '';
             }
-            updateFabVisibility();
-            return;
-        }
-        wasMobile = nowMobile;
-        if (nowMobile) {
-            panel.classList.remove('collapsed', 'dragging', 'sheet-open');
-            panel.style.left = ''; panel.style.top = ''; panel.style.right = '';
-            toggleBtn.textContent = '×';
-            backdrop.classList.remove('visible');
-        } else {
-            panel.classList.remove('sheet-open');
-            backdrop.classList.remove('visible');
-            toggleBtn.textContent = panel.classList.contains('collapsed') ? '+' : '−';
-            initDesktopPosition();
         }
         updateFabVisibility();
     });
