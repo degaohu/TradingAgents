@@ -17,6 +17,14 @@ function setLang(lang) {
             el.textContent = lang === 'zh' ? el.dataset.zh : el.dataset.en;
         }
     });
+    // Re-render toc-name spans (they have data-zh but also children-level span)
+    document.querySelectorAll('.toc-name[data-zh]').forEach(el => {
+        el.textContent = lang === 'zh' ? el.dataset.zh : el.dataset.en;
+    });
+    // Re-render agent status labels
+    document.querySelectorAll('.agent-status-label[data-zh]').forEach(el => {
+        el.textContent = lang === 'zh' ? el.dataset.zh : el.dataset.en;
+    });
     // Re-render dynamic pipeline stage labels for the new language.
     document.querySelectorAll('.pipeline-stage').forEach(row => {
         const lbl = row.querySelector('.stage-label');
@@ -39,6 +47,9 @@ function setLang(lang) {
     if (typeof renderHistoryList === "function") {
         renderHistoryList();
     }
+    // Swap disclaimer body between Chinese and English.
+    document.querySelectorAll('[data-zh-visible]').forEach(el => { el.hidden = lang !== 'zh'; });
+    document.querySelectorAll('[data-en-visible]').forEach(el => { el.hidden = lang !== 'en'; });
 }
 
 window.setLang = setLang;
@@ -64,6 +75,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setLang('zh');
 
+    // Disclaimer gate — must be acknowledged before the dashboard is usable.
+    // We store an ack timestamp in localStorage; expires after 30 days so
+    // users re-consent periodically without seeing the modal every visit.
+    (function initDisclaimer() {
+        const KEY = "tradingagents.disclaimerAckedAt";
+        const TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days
+        const modal   = document.getElementById("disclaimer-modal");
+        const accept  = document.getElementById("disclaimer-accept");
+        const decline = document.getElementById("disclaimer-decline");
+        const check   = document.getElementById("disclaimer-ack");
+        if (!modal) return;
+
+        const acked = parseInt(localStorage.getItem(KEY) || "0", 10);
+        if (acked && (Date.now() - acked) < TTL_MS) {
+            modal.hidden = true;
+            document.body.classList.remove("modal-open");
+            return;
+        }
+        modal.hidden = false;
+        document.body.classList.add("modal-open");
+
+        check.addEventListener("change", () => { accept.disabled = !check.checked; });
+        accept.addEventListener("click", () => {
+            if (!check.checked) return;
+            localStorage.setItem(KEY, String(Date.now()));
+            modal.hidden = true;
+            document.body.classList.remove("modal-open");
+        });
+        decline.addEventListener("click", () => {
+            // Best-effort exit: navigate away. Some browsers block window.close()
+            // for pages they didn't open, so send the user to about:blank as fallback.
+            try { window.close(); } catch (_) { /* ignore */ }
+            window.location.href = "about:blank";
+        });
+    })();
+
     // Default analysis date to today (local time, YYYY-MM-DD).
     (function initTodayDate() {
         const el = document.getElementById("trade_date");
@@ -82,22 +129,34 @@ document.addEventListener("DOMContentLoaded", () => {
     // tail. Keyboard: ArrowUp/Down/Enter/Escape.
     initTickerAutosuggest();
 
-    // ----------------------------------------------------------------
-    // 2. Tab Switching
-    // ----------------------------------------------------------------
-    document.querySelectorAll(".tabs-nav").forEach(nav => {
-        const deck = nav.parentElement; // The dock-panel container containing nav and panels
-        nav.querySelectorAll(".tab-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
-                if (btn.id === "export-pdf-btn") return;
-                nav.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-                deck.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-                btn.classList.add("active");
-                const pane = deck.querySelector(`#pane-${btn.dataset.tab}`);
-                if (pane) pane.classList.add("active");
-            });
+    // Account bar: current-user display, admin-panel link (admin only),
+    // and logout — the dashboard is multi-user (see web/routes.py's login
+    // system) but nothing surfaced a way to see who's logged in, reach
+    // /admin, or log out until now.
+    (function initAccountBar() {
+        const usernameEl = document.getElementById('account-username');
+        const adminLink = document.getElementById('account-admin-link');
+        const logoutBtn = document.getElementById('account-logout-btn');
+        if (!usernameEl || !logoutBtn) return;
+
+        const versionEl = document.getElementById('account-version');
+        fetch('/api/me')
+            .then(r => r.ok ? r.json() : null)
+            .then(me => {
+                if (!me || !me.username) return;
+                usernameEl.textContent = me.username;
+                usernameEl.title = me.username;
+                if (me.is_admin && adminLink) adminLink.style.display = '';
+                if (me.version && versionEl) versionEl.textContent = 'v' + me.version;
+                updateQuotaUI(me);
+            })
+            .catch(() => { /* account bar is a nicety, not critical path */ });
+
+        logoutBtn.addEventListener('click', async () => {
+            try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+            location.href = '/login';
         });
-    });
+    })();
 
     // ----------------------------------------------------------------
     // 3. Job state
@@ -109,6 +168,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let stageLogs = {};      // stage_id -> string[] (log lines seen while it was running)
     let stageReports = {};   // stage_id -> {elementId: text} (reports delivered for this stage)
     let stageLabels = {};    // stage_id -> label (for the detail panel header)
+    let currentlySubmitting = false;
+    let quotaExhausted = false;  // true when a non-admin has 0 reports left
 
     function showView(view) {
         [welcomeView, loadingView].forEach(v => v.classList.remove("active"));
@@ -118,15 +179,64 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             view.classList.add("active");
         }
+        // On mobile, the Analyze tab stacks the ticker/date form above
+        // whatever's below it — once there's a pipeline or a report to
+        // show, collapse the form to a compact row so that content gets
+        // the room instead of sharing space with a full-size idle form.
+        configForm.classList.toggle("form-collapsed", view !== welcomeView);
     }
 
     function setSubmitting(isSubmitting) {
-        submitBtn.disabled = isSubmitting;
+        currentlySubmitting = isSubmitting;
+        // Stay disabled if the user is also out of report quota.
+        submitBtn.disabled = isSubmitting || quotaExhausted;
         submitBtn.querySelector("span").textContent =
             currentLang === 'zh'
                 ? (isSubmitting ? "分析中..." : "开始分析")
                 : (isSubmitting ? "Analyzing..." : "Run Analysis");
     }
+
+    // Reflect the user's remaining report quota (from /api/me) in the sidebar
+    // indicator and gate the submit button when it hits zero. Admins have
+    // quota === null (unlimited) and see no indicator.
+    function updateQuotaUI(me) {
+        const ind = document.getElementById('quota-indicator');
+        const valEl = document.getElementById('quota-value');
+        const warnEl = document.getElementById('quota-warning');
+        if (!ind || !valEl || !warnEl) return;
+        const q = me ? me.quota : undefined;
+        if (q === null || q === undefined) {
+            ind.style.display = 'none';
+            quotaExhausted = false;
+        } else {
+            const threshold = (me && me.quota_low_threshold) || 3;
+            ind.style.display = 'flex';
+            valEl.textContent = q;
+            ind.classList.remove('quota-low', 'quota-empty');
+            if (q <= 0) {
+                ind.classList.add('quota-empty');
+                warnEl.textContent = currentLang === 'zh' ? '· 已用完，请联系管理员' : '· Depleted — contact admin';
+            } else if (q <= threshold) {
+                ind.classList.add('quota-low');
+                warnEl.textContent = currentLang === 'zh' ? '· 次数偏低' : '· Running low';
+            } else {
+                warnEl.textContent = '';
+            }
+            quotaExhausted = q <= 0;
+        }
+        submitBtn.disabled = currentlySubmitting || quotaExhausted;
+    }
+
+    // Re-fetch /api/me and refresh the quota UI — called after a report
+    // completes (the balance was just decremented server-side) and after a
+    // quota-exceeded rejection.
+    async function refreshQuota() {
+        try {
+            const me = await fetch('/api/me').then(r => r.ok ? r.json() : null);
+            if (me) updateQuotaUI(me);
+        } catch (e) { /* best effort */ }
+    }
+    window.__taRefreshQuota = refreshQuota;
 
     function resetLoadingView() {
         pipelineList.innerHTML = "";
@@ -213,6 +323,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 attachToJob(running.job_id);
                 return;
             }
+            if (response.status === 403) {
+                // Out of report quota — show the server's message and refresh
+                // the indicator (it will flip to the empty/red state).
+                const body = await response.json().catch(() => ({}));
+                const msg = (body.detail && body.detail.message)
+                    || (currentLang === 'zh' ? '报告生成次数已用完。' : 'Report quota exhausted.');
+                setSubmitting(false);
+                showView(welcomeView);
+                refreshQuota();
+                alert(msg);
+                return;
+            }
             if (!response.ok) throw new Error("HTTP error " + response.status);
 
             const { job_id } = await response.json();
@@ -232,6 +354,8 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.setItem(JOB_STORAGE_KEY, jobId);
         setSubmitting(true);
         if (!isNew) showView(loadingView);
+        // Reflect the new "Running" entry in the History list immediately.
+        if (typeof renderHistoryList === "function") renderHistoryList();
 
         if (eventSource) eventSource.close();
         eventSource = new EventSource(`/api/jobs/${jobId}/events`);
@@ -271,12 +395,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 localStorage.removeItem(JOB_STORAGE_KEY);
                 setSubmitting(false);
                 displayResults(payload.data);
+                refreshQuota();  // a report was produced — balance decremented
+                if (typeof window.__taNotify === "function") {
+                    const d = payload.data || {};
+                    const t = d.company_of_interest || d.ticker || "";
+                    const rating = (d.decision_summary && d.decision_summary.rating) || d.decision || "";
+                    window.__taNotify(
+                        currentLang === 'zh' ? `分析完成 · ${t}` : `Analysis done · ${t}`,
+                        currentLang === 'zh' ? `建议：${rating}` : `Rating: ${rating}`
+                    );
+                }
                 break;
             case "error":
                 closeStream();
                 localStorage.removeItem(JOB_STORAGE_KEY);
                 setSubmitting(false);
                 showInlineError((currentLang === 'zh' ? "分析出错：" : "Analysis failed: ") + payload.message);
+                if (typeof window.__taNotify === "function") {
+                    window.__taNotify(
+                        currentLang === 'zh' ? "分析失败" : "Analysis failed",
+                        payload.message || ""
+                    );
+                }
                 break;
             case "cancelled":
                 closeStream();
@@ -296,6 +436,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         liveStatusBanner.style.display = "none";
         stopLoadingHud();
+        // Drop the synthetic "Running" row and pull the final entry.
+        if (typeof renderHistoryList === "function") renderHistoryList();
     }
 
     stopBtn.addEventListener("click", async () => {
@@ -310,7 +452,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     retryBtn.addEventListener("click", () => {
         errorBanner.style.display = "none";
-        showView(welcomeView);
+        // Re-submit with the exact same form (checkpoint_enabled is on by
+        // default, so backend picks up from wherever it stopped).
+        const form = document.getElementById("config-form");
+        if (form) {
+            if (form.requestSubmit) form.requestSubmit();
+            else form.submit();
+        } else {
+            showView(welcomeView);
+        }
     });
 
     previewBtn.addEventListener("click", () => {
@@ -622,6 +772,41 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         Object.entries(reports).forEach(([elementId, text]) => setMarkdown(elementId, text));
 
+        // Sync section status dots in the report view (if already showing)
+        if (typeof window.__taSetSectionStatus === "function") {
+            const elementToSectionKey = {
+                "report-market":       "technical",
+                "report-fundamentals": "fundamentals",
+                "report-news":         "news",
+                "report-sentiment":    "sentiment",
+                "debate-bull":         "debate",
+                "risk-judge-content":  "risk",
+            };
+            Object.keys(reports).forEach(elementId => {
+                const sectionKey = elementToSectionKey[elementId];
+                if (sectionKey) {
+                    window.__taSetSectionStatus(sectionKey, status === "done" ? "completed" : status === "running" ? "running" : "pending");
+                }
+            });
+            // When a stage is running, mark the most relevant section as running
+            if (status === "running") {
+                const stageIdLower = (stageId || "").toLowerCase();
+                if (stageIdLower.includes("market") || stageIdLower.includes("technical")) {
+                    window.__taSetSectionStatus("technical", "running");
+                } else if (stageIdLower.includes("fundamental")) {
+                    window.__taSetSectionStatus("fundamentals", "running");
+                } else if (stageIdLower.includes("news")) {
+                    window.__taSetSectionStatus("news", "running");
+                } else if (stageIdLower.includes("sentiment") || stageIdLower.includes("social")) {
+                    window.__taSetSectionStatus("sentiment", "running");
+                } else if (stageIdLower.includes("debate") || stageIdLower.includes("bull") || stageIdLower.includes("bear")) {
+                    window.__taSetSectionStatus("debate", "running");
+                } else if (stageIdLower.includes("risk") || stageIdLower.includes("portfolio")) {
+                    window.__taSetSectionStatus("risk", "running");
+                }
+            }
+        }
+
         // Live-refresh an already-open detail panel instead of waiting for the next click.
         const detail = pipelineList.querySelector(`[data-detail-for="${cssEscape(stageId)}"]`);
         if (detail && detail.style.display !== "none") renderStageDetail(stageId);
@@ -643,6 +828,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const consoleEl = document.getElementById("loading-console");
         const line = document.createElement("div");
         line.className = "console-line";
+        if (text.includes("✔"))       line.classList.add("log-ok");
+        else if (text.includes("▶")) line.classList.add("log-run");
+        else if (text.includes("ℹ")) line.classList.add("log-info");
+        else if (text.includes("⟳")) line.classList.add("log-retry");
+        else if (/\bWARN|WARNING|ERR|ERROR|Traceback/i.test(text)) line.classList.add("log-warn");
         line.textContent = text;
         consoleEl.appendChild(line);
         const container = consoleEl.parentElement;
@@ -672,6 +862,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (scroller) {
             scroller.scrollTop = 0;
         }
+
+        // Now that the report is visible and scrolled to top, recompute the
+        // active section so the nav (and the mobile pill) shows the first
+        // section rather than whatever the hidden-layout init guessed.
+        requestAnimationFrame(() => {
+            if (typeof window.__taSyncActiveSection === "function") window.__taSyncActiveSection();
+        });
 
         const summary = data.decision_summary || {};
         const action = (summary.action || data.decision || "HOLD").toUpperCase();
@@ -797,6 +994,19 @@ document.addEventListener("DOMContentLoaded", () => {
             summary.executive_summary || summary.reasoning ||
             (currentLang === 'zh' ? "暂无决策摘要。" : "No reasoning provided.");
 
+        // ── Confidence gauge ────────────────────────────────────────
+        renderConfidence(summary.confidence);
+
+        // ── Chart with decision-level overlays ──────────────────────
+        renderPriceChart({
+            ticker: ticker,
+            date: date,
+            entry: summary.entry_price,
+            stop:  summary.stop_loss,
+            target: summary.price_target,
+            action: action,
+        });
+
         // ── Analyst Reports ─────────────────────────────────────────
         setMarkdown("report-market",       data.market_report);
         setMarkdown("report-sentiment",    data.sentiment_report);
@@ -818,29 +1028,98 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // ── Trader Plan ──────────────────────────────────────────────
         setMarkdown("trader-plan-content",   data.trader_investment_plan);
-        setMarkdown("final-decision-content", data.final_trade_decision);
 
         // ── Raw Plan ─────────────────────────────────────────────────
         document.getElementById("raw-markdown").textContent = data.investment_plan || "";
 
-        // Save to Local History Watchlist
+        // ── Update section status indicators ─────────────────────────
+        // Mark each agent section as completed once data arrives.
+        const sectionStatusMap = {
+            "technical":    "report-market",
+            "fundamentals": "report-fundamentals",
+            "news":         "report-news",
+            "sentiment":    "report-sentiment",
+            "debate":       "debate-bull",
+            "risk":         "risk-judge-content",
+        };
+        Object.entries(sectionStatusMap).forEach(([section, contentId]) => {
+            const el = document.getElementById(contentId);
+            const hasContent = el && el.textContent.trim() && !el.querySelector('.empty-state');
+            setSectionStatus(section, hasContent ? "completed" : "pending");
+        });
+
+        // History is now saved server-side the moment the job finishes
+        // (see web/history.py via _run_job in routes.py) — just refresh
+        // the list so a completed run shows up immediately without
+        // requiring a reload.
         if (ticker !== "--" && date !== "--") {
-            saveToHistory(ticker, date, ratingText, action, data);
+            renderHistoryList();
+        }
+
+        // Trigger reading time calculations for the reader view
+        if (typeof window.__taCalculateReadingTime === "function") {
+            window.__taCalculateReadingTime();
         }
     }
+
+    /**
+     * Update the status dot and label for a report section.
+     * @param {string} sectionKey - one of: technical, fundamentals, news, sentiment, debate, risk
+     * @param {"pending"|"running"|"completed"|"failed"} status
+     */
+    function setSectionStatus(sectionKey, status) {
+        const statusEl = document.getElementById(`status-${sectionKey}`);
+        const tocDot   = document.getElementById(`toc-dot-${sectionKey}`);
+        if (!statusEl) return;
+        const dot   = statusEl.querySelector('.agent-status-dot');
+        const label = statusEl.querySelector('.agent-status-label');
+
+        const statusConfig = {
+            pending:   { cls: 'status-pending',   zh: '待运行',   en: 'Pending'   },
+            running:   { cls: 'status-running',   zh: '分析中',   en: 'Analyzing' },
+            completed: { cls: 'status-completed', zh: '已完成',   en: 'Completed' },
+            failed:    { cls: 'status-failed',    zh: '分析失败', en: 'Failed'    },
+        };
+        const cfg = statusConfig[status] || statusConfig.pending;
+
+        if (dot) {
+            dot.className = `agent-status-dot ${cfg.cls}`;
+        }
+        if (label) {
+            label.dataset.zh = cfg.zh;
+            label.dataset.en = cfg.en;
+            label.textContent = currentLang === 'zh' ? cfg.zh : cfg.en;
+        }
+        if (tocDot) {
+            tocDot.className = `toc-status-dot ${cfg.cls}`;
+        }
+    }
+
+    // Expose setSectionStatus globally for use in SSE handlers
+    window.__taSetSectionStatus = setSectionStatus;
 
     // Expose to global scope so the top-level loadHistoryItem() (which
     // lives outside this DOMContentLoaded closure) can call it.
     window.__taDisplayResults = displayResults;
 
     // ----------------------------------------------------------------
-    // 9. Refresh recovery — reattach to a job still running after reload
+    // 9. Refresh recovery — reattach to a job still running after reload,
+    // even from a different device/browser than the one that started it.
     // ----------------------------------------------------------------
     (async function recoverActiveJob() {
-        const savedJobId = localStorage.getItem(JOB_STORAGE_KEY);
-        if (!savedJobId) return;
+        let jobId = localStorage.getItem(JOB_STORAGE_KEY);
+        if (!jobId) {
+            // Nothing remembered on *this* device/browser — ask the server
+            // whether this logged-in user has a job running elsewhere
+            // (started on another device, or local storage was cleared).
+            try {
+                const me = await fetch("/api/me").then(r => r.ok ? r.json() : null);
+                if (me && me.active_job_id) jobId = me.active_job_id;
+            } catch (err) { /* best effort */ }
+            if (!jobId) return;
+        }
         try {
-            const resp = await fetch(`/api/jobs/${savedJobId}`);
+            const resp = await fetch(`/api/jobs/${jobId}`);
             if (!resp.ok) {
                 localStorage.removeItem(JOB_STORAGE_KEY);
                 return;
@@ -848,7 +1127,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const snapshot = await resp.json();
             if (snapshot.status === "running") {
                 resetLoadingView();
-                attachToJob(savedJobId);
+                attachToJob(jobId);
             } else {
                 localStorage.removeItem(JOB_STORAGE_KEY);
                 if (snapshot.status === "done" && snapshot.result) {
@@ -963,7 +1242,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function buildTable(rows) {
         if (!rows.length) return "";
-        const out   = ["<table>"];
+        // Wrapped in a horizontally-scrollable div: financial report tables
+        // routinely have 5+ columns, and the results view's parent sets
+        // overflow-x:hidden — without this wrapper, a wide table on a
+        // ~375px phone screen just gets clipped/squeezed illegibly instead
+        // of being scrollable.
+        const out = ['<div class="table-scroll"><table>'];
         const parse = row => row.split("|").map(s => s.trim()).filter((_, i, a) => i > 0 && i < a.length - 1);
 
         const headers = parse(rows[0]);
@@ -981,7 +1265,7 @@ document.addEventListener("DOMContentLoaded", () => {
             cols.forEach(c => out.push(`<td>${parseInline(c)}</td>`));
             out.push("</tr>");
         }
-        out.push("</tbody></table>");
+        out.push("</tbody></table></div>");
         return out.join("\n");
     }
 
@@ -1282,6 +1566,414 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof initTOCScroller === "function") {
         initTOCScroller();
     }
+
+    // ── 9. Editorial Reader Mode & Text-to-Speech Broadcaster ─────────
+    (function initEditorialReaderMode() {
+        const toggleBtn = document.getElementById("toggle-reader-mode-btn");
+        const settingsPanel = document.getElementById("reader-settings-panel");
+        const resultsView = document.getElementById("results-view");
+        
+        // Font buttons
+        const decFontBtn = document.getElementById("reader-font-dec");
+        const incFontBtn = document.getElementById("reader-font-inc");
+        const serifFontBtn = document.getElementById("reader-font-serif");
+        const sansFontBtn = document.getElementById("reader-font-sans");
+        
+        // Theme dots
+        const themePaper = document.getElementById("reader-theme-paper");
+        const themeWhite = document.getElementById("reader-theme-white");
+        const themeDark = document.getElementById("reader-theme-dark");
+        
+        // TTS buttons
+        const ttsPlayBtn = document.getElementById("tts-play-btn");
+        const ttsStopBtn = document.getElementById("tts-stop-btn");
+        const ttsSpeedSelect = document.getElementById("tts-speed-select");
+
+        if (!toggleBtn || !resultsView) return;
+
+        // --- Preferences and Settings ---
+        let readerActive = localStorage.getItem("tradingagents.reader.active") === "true";
+        let fontSize = parseInt(localStorage.getItem("tradingagents.reader.fontSize") || "17", 10);
+        let fontFamily = localStorage.getItem("tradingagents.reader.fontFamily") || "serif";
+        let currentTheme = localStorage.getItem("tradingagents.reader.theme") || "paper";
+
+        // Limit font range
+        const MIN_FONT = 14;
+        const MAX_FONT = 24;
+
+        function applySettings() {
+            // Apply reader mode class
+            resultsView.classList.toggle("editorial-reader-mode", readerActive);
+            settingsPanel.style.display = readerActive ? "flex" : "none";
+
+            // Update toggle button text based on state and current language
+            const btnTextEl = toggleBtn.querySelector(".btn-text-lang");
+            if (btnTextEl) {
+                if (readerActive) {
+                    btnTextEl.setAttribute("data-zh", "返回仪表盘模式");
+                    btnTextEl.setAttribute("data-en", "Dashboard View");
+                    btnTextEl.textContent = currentLang === "zh" ? "返回仪表盘模式" : "Dashboard View";
+                } else {
+                    btnTextEl.setAttribute("data-zh", "社论阅读模式");
+                    btnTextEl.setAttribute("data-en", "Reader View");
+                    btnTextEl.textContent = currentLang === "zh" ? "社论阅读模式" : "Reader View";
+                }
+            }
+
+            if (readerActive) {
+                // Apply font size
+                document.documentElement.style.setProperty("--r-font-size", fontSize + "px");
+
+                // Apply font family
+                const fontVal = fontFamily === "serif" ? "Georgia, Cambria, 'Times New Roman', serif" : "var(--font-sans, system-ui, -apple-system, sans-serif)";
+                document.documentElement.style.setProperty("--r-font-family", fontVal);
+
+                // Update font family button states
+                serifFontBtn.classList.toggle("active", fontFamily === "serif");
+                sansFontBtn.classList.toggle("active", fontFamily === "sans");
+
+                // Apply theme variables
+                const styles = {
+                    paper: {
+                        "--r-bg": "var(--paper-bg)",
+                        "--r-text": "var(--paper-text)",
+                        "--r-card": "var(--paper-card)",
+                        "--r-border": "var(--paper-border)",
+                        "--r-header": "var(--paper-header)",
+                        "--r-heading": "var(--paper-heading)",
+                        "--r-muted": "var(--paper-muted)"
+                    },
+                    white: {
+                        "--r-bg": "var(--white-bg)",
+                        "--r-text": "var(--white-text)",
+                        "--r-card": "var(--white-card)",
+                        "--r-border": "var(--white-border)",
+                        "--r-header": "var(--white-header)",
+                        "--r-heading": "var(--white-heading)",
+                        "--r-muted": "var(--white-muted)"
+                    },
+                    dark: {
+                        "--r-bg": "var(--dark-bg)",
+                        "--r-text": "var(--dark-text)",
+                        "--r-card": "var(--dark-card)",
+                        "--r-border": "var(--dark-border)",
+                        "--r-header": "var(--dark-header)",
+                        "--r-heading": "var(--dark-heading)",
+                        "--r-muted": "var(--dark-muted)"
+                    }
+                };
+
+                const currentThemeStyles = styles[currentTheme] || styles.paper;
+                Object.entries(currentThemeStyles).forEach(([prop, val]) => {
+                    document.documentElement.style.setProperty(prop, val);
+                });
+
+                // Update active dot in theme selector
+                themePaper.classList.toggle("active", currentTheme === "paper");
+                themeWhite.classList.toggle("active", currentTheme === "white");
+                themeDark.classList.toggle("active", currentTheme === "dark");
+            } else {
+                // Clear inline css variables when reader is disabled
+                const propsToClear = [
+                    "--r-font-size", "--r-font-family", "--r-bg", "--r-text", 
+                    "--r-card", "--r-border", "--r-header", "--r-heading", "--r-muted"
+                ];
+                propsToClear.forEach(prop => document.documentElement.style.removeProperty(prop));
+                // Stop voice if user exits reader mode
+                stopReading();
+            }
+
+            // Sync layout size/re-align sidebar
+            if (typeof window.__taSyncActiveSection === "function") {
+                setTimeout(window.__taSyncActiveSection, 50);
+            }
+        }
+
+        // Toggle action
+        toggleBtn.addEventListener("click", () => {
+            readerActive = !readerActive;
+            localStorage.setItem("tradingagents.reader.active", String(readerActive));
+            applySettings();
+        });
+
+        // Font Adjustments
+        decFontBtn.addEventListener("click", () => {
+            if (fontSize > MIN_FONT) {
+                fontSize -= 1;
+                localStorage.setItem("tradingagents.reader.fontSize", String(fontSize));
+                applySettings();
+            }
+        });
+        incFontBtn.addEventListener("click", () => {
+            if (fontSize < MAX_FONT) {
+                fontSize += 1;
+                localStorage.setItem("tradingagents.reader.fontSize", String(fontSize));
+                applySettings();
+            }
+        });
+
+        // Font Family Switchers
+        serifFontBtn.addEventListener("click", () => {
+            fontFamily = "serif";
+            localStorage.setItem("tradingagents.reader.fontFamily", fontFamily);
+            applySettings();
+        });
+        sansFontBtn.addEventListener("click", () => {
+            fontFamily = "sans";
+            localStorage.setItem("tradingagents.reader.fontFamily", fontFamily);
+            applySettings();
+        });
+
+        // Theme Switchers
+        themePaper.addEventListener("click", () => {
+            currentTheme = "paper";
+            localStorage.setItem("tradingagents.reader.theme", currentTheme);
+            applySettings();
+        });
+        themeWhite.addEventListener("click", () => {
+            currentTheme = "white";
+            localStorage.setItem("tradingagents.reader.theme", currentTheme);
+            applySettings();
+        });
+        themeDark.addEventListener("click", () => {
+            currentTheme = "dark";
+            localStorage.setItem("tradingagents.reader.theme", currentTheme);
+            applySettings();
+        });
+
+        // --- Text-to-Speech (TTS) Voice Broadcaster ---
+        let synth = window.speechSynthesis;
+        let playQueue = [];
+        let currentQueueIndex = -1;
+        let isSpeaking = false;
+        let isPaused = false;
+        let currentUtterance = null;
+
+        // Estimate reading time dynamically
+        function calculateReadingTime() {
+            const flowContainer = document.querySelector(".report-flow-container");
+            if (!flowContainer) return;
+            const sections = flowContainer.querySelectorAll(".report-section");
+            
+            sections.forEach(sec => {
+                // Check if time badge already exists
+                let badge = sec.querySelector(".read-time-badge");
+                if (!badge) {
+                    badge = document.createElement("span");
+                    badge.className = "read-time-badge";
+                    
+                    const secMeta = sec.querySelector(".report-section-meta");
+                    if (secMeta) {
+                        secMeta.appendChild(badge);
+                    } else {
+                        // fallback to section header
+                        const header = sec.querySelector(".report-section-header");
+                        if (header) header.appendChild(badge);
+                    }
+                }
+                
+                const bodyText = sec.querySelector(".report-section-body")?.textContent || "";
+                const cleanText = bodyText.trim().replace(/\s+/g, "");
+                
+                // Average speed: 400 characters per minute for Chinese, 200 words for English
+                const isChinese = /[\u4e00-\u9fa5]/.test(cleanText);
+                let minutes = 1;
+                if (isChinese) {
+                    minutes = Math.max(1, Math.ceil(cleanText.length / 400));
+                } else {
+                    const wordCount = bodyText.trim().split(/\s+/).length;
+                    minutes = Math.max(1, Math.ceil(wordCount / 200));
+                }
+                
+                badge.setAttribute("data-zh", `⏳ ${minutes} 分钟阅读`);
+                badge.setAttribute("data-en", `⏳ ${minutes} min read`);
+                badge.textContent = currentLang === "zh" ? `⏳ ${minutes} 分钟阅读` : `⏳ ${minutes} min read`;
+            });
+        }
+
+        // Expose time calculation globally so we can refresh it after displaying results
+        window.__taCalculateReadingTime = calculateReadingTime;
+
+        // Parse section text for reading
+        function getSectionPlayText(sectionEl) {
+            // Get title
+            const title = sectionEl.querySelector(".report-section-title")?.textContent || "";
+            // Get body text, filter out raw codes
+            const body = sectionEl.querySelector(".report-section-body")?.textContent || "";
+            
+            // Clean up the text a bit for natural speech
+            return (title + "。\n" + body)
+                .replace(/\|/g, " ") // replace table dividers
+                .replace(/[-*#]/g, " ") // replace markdown markers
+                .replace(/\s+/g, " ")
+                .trim();
+        }
+
+        function populateQueue() {
+            playQueue = [];
+            const sections = document.querySelectorAll(".report-flow-container .report-section");
+            sections.forEach((sec, idx) => {
+                playQueue.push({
+                    element: sec,
+                    text: getSectionPlayText(sec),
+                    index: idx
+                });
+            });
+        }
+
+        function speakSection(index) {
+            if (!synth) return;
+            synth.cancel(); // clear any pending speaking
+
+            if (index < 0 || index >= playQueue.length) {
+                stopReading();
+                return;
+            }
+
+            currentQueueIndex = index;
+            const item = playQueue[index];
+            
+            // Remove previous active highlights
+            document.querySelectorAll(".report-section.reading-active").forEach(el => {
+                el.classList.remove("reading-active");
+            });
+
+            // Highlight active section
+            item.element.classList.add("reading-active");
+            
+            // Smoothly scroll to active section
+            const scroller = document.getElementById("results-view");
+            if (scroller) {
+                scroller.scrollTo({
+                    top: item.element.offsetTop - 12,
+                    behavior: "smooth"
+                });
+            }
+
+            // Create utterance
+            const textToSpeak = item.text;
+            if (!textToSpeak) {
+                // skip empty section
+                speakSection(index + 1);
+                return;
+            }
+
+            currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
+            
+            // Speed
+            currentUtterance.rate = parseFloat(ttsSpeedSelect.value || "1");
+
+            // Language auto-detection
+            const isChinese = /[\u4e00-\u9fa5]/.test(textToSpeak);
+            currentUtterance.lang = isChinese ? "zh-CN" : "en-US";
+
+            // Find matching system voice if available
+            if (synth.getVoices) {
+                const voices = synth.getVoices();
+                const matchedVoice = voices.find(v => v.lang.startsWith(isChinese ? "zh" : "en"));
+                if (matchedVoice) currentUtterance.voice = matchedVoice;
+            }
+
+            // Utterance events
+            currentUtterance.onstart = () => {
+                isSpeaking = true;
+                isPaused = false;
+                ttsPlayBtn.textContent = currentLang === "zh" ? "⏸ 暂停" : "⏸ Pause";
+                ttsPlayBtn.setAttribute("data-zh", "⏸ 暂停");
+                ttsPlayBtn.setAttribute("data-en", "⏸ Pause");
+                ttsStopBtn.disabled = false;
+            };
+
+            currentUtterance.onend = () => {
+                // Autoplay next section
+                if (isSpeaking && !isPaused) {
+                    speakSection(currentQueueIndex + 1);
+                }
+            };
+
+            currentUtterance.onerror = (e) => {
+                console.error("TTS play error:", e);
+                if (e.error !== "interrupted" && e.error !== "canceled") {
+                    speakSection(currentQueueIndex + 1);
+                }
+            };
+
+            synth.speak(currentUtterance);
+        }
+
+        function stopReading() {
+            if (synth) {
+                synth.cancel();
+            }
+            isSpeaking = false;
+            isPaused = false;
+            currentQueueIndex = -1;
+            currentUtterance = null;
+            
+            // Remove active highlights
+            document.querySelectorAll(".report-section.reading-active").forEach(el => {
+                el.classList.remove("reading-active");
+            });
+
+            // Update UI buttons
+            ttsPlayBtn.textContent = currentLang === "zh" ? "▶ 播放" : "▶ Play";
+            ttsPlayBtn.setAttribute("data-zh", "▶ 播放");
+            ttsPlayBtn.setAttribute("data-en", "▶ Play");
+            ttsStopBtn.disabled = true;
+        }
+
+        // Toggle play/pause
+        ttsPlayBtn.addEventListener("click", () => {
+            if (!synth) {
+                alert(currentLang === "zh" ? "您的浏览器不支持语音朗读。" : "TTS not supported in your browser.");
+                return;
+            }
+
+            if (isSpeaking) {
+                if (isPaused) {
+                    // Resume
+                    synth.resume();
+                    isPaused = false;
+                    ttsPlayBtn.textContent = currentLang === "zh" ? "⏸ 暂停" : "⏸ Pause";
+                    ttsPlayBtn.setAttribute("data-zh", "⏸ 暂停");
+                    ttsPlayBtn.setAttribute("data-en", "⏸ Pause");
+                } else {
+                    // Pause
+                    synth.pause();
+                    isPaused = true;
+                    ttsPlayBtn.textContent = currentLang === "zh" ? "▶ 继续" : "▶ Resume";
+                    ttsPlayBtn.setAttribute("data-zh", "▶ 继续");
+                    ttsPlayBtn.setAttribute("data-en", "▶ Resume");
+                }
+            } else {
+                // Start fresh play
+                populateQueue();
+                if (playQueue.length > 0) {
+                    speakSection(0);
+                }
+            }
+        });
+
+        ttsStopBtn.addEventListener("click", stopReading);
+
+        // Adjust speed on-the-fly
+        ttsSpeedSelect.addEventListener("change", () => {
+            if (isSpeaking && currentUtterance) {
+                // Need to restart speaking current section to apply speed change
+                const savedIndex = currentQueueIndex;
+                synth.cancel();
+                setTimeout(() => {
+                    speakSection(savedIndex);
+                }, 100);
+            }
+        });
+
+        // Initialize and apply
+        applySettings();
+
+        // Calculate time on first load if results exist
+        setTimeout(calculateReadingTime, 1000);
+    })();
 });
 
 // ── Globals and SVG Charting Helpers ─────────────────────────────────
@@ -1302,20 +1994,6 @@ function triggerChartResize() {
 window.addEventListener("resize", () => {
     triggerChartResize();
 });
-
-window.zoomCard = function(cardId) {
-    const card = document.getElementById(cardId);
-    if (!card) return;
-    const isMax = card.classList.contains("maximized");
-    // Remove maximized from all other cards first
-    document.querySelectorAll(".analyst-card").forEach(c => c.classList.remove("maximized"));
-    if (!isMax) {
-        card.classList.add("maximized");
-        card.querySelector(".card-zoom-btn").textContent = "✕";
-    } else {
-        card.querySelector(".card-zoom-btn").textContent = "🔎";
-    }
-};
 
 async function loadAndDrawChart(ticker, date, entry, target, stop) {
     const chartContainer = document.getElementById("price-chart-container");
@@ -1554,13 +2232,16 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
         document.body.appendChild(tooltip);
     }
 
-    hoverRect.addEventListener("mousemove", (e) => {
+    // Shared by mouse (mousemove) and touch (touchstart/touchmove) — on a
+    // phone/tablet nothing ever fires "mousemove", so a mouse-only listener
+    // makes the whole tooltip permanently unreachable via touch.
+    function updateHover(clientX, pageX, pageY) {
         const rect = svg.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left - margin.left;
+        const mouseX = clientX - rect.left - margin.left;
         const frac = mouseX / chartWidth;
         const rawIdx = frac * (prices.length - 1);
         const idx = Math.max(0, Math.min(prices.length - 1, Math.round(rawIdx)));
-        
+
         const p = prices[idx];
         const x = getX(idx);
         const y = getY(p.close);
@@ -1575,8 +2256,8 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
         hoverDot.setAttribute("cy", y);
         hoverDot.style.display = "block";
 
-        const tooltipX = e.pageX + 15;
-        const tooltipY = e.pageY - 40;
+        const tooltipX = pageX + 15;
+        const tooltipY = pageY - 40;
         tooltip.style.left = tooltipX + "px";
         tooltip.style.top = tooltipY + "px";
         tooltip.style.display = "block";
@@ -1584,107 +2265,192 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
             <div><strong>${p.date}</strong></div>
             <div>Price: $${p.close.toFixed(2)}</div>
         `;
-    });
+    }
 
-    hoverRect.addEventListener("mouseleave", () => {
+    function hideHover() {
         hoverLine.style.display = "none";
         hoverDot.style.display = "none";
         tooltip.style.display = "none";
+    }
+
+    hoverRect.addEventListener("mousemove", (e) => updateHover(e.clientX, e.pageX, e.pageY));
+    hoverRect.addEventListener("mouseleave", hideHover);
+
+    // Touch: preventDefault so dragging a finger across the chart scrubs
+    // the tooltip instead of scrolling the page (the chart itself never
+    // needs to scroll — it's a fixed-size element). Requires {passive:false}
+    // since browsers default touch listeners to passive, which silently
+    // ignores preventDefault().
+    hoverRect.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        updateHover(t.clientX, t.pageX, t.pageY);
+    }, { passive: false });
+    hoverRect.addEventListener("touchmove", (e) => {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        updateHover(t.clientX, t.pageX, t.pageY);
+    }, { passive: false });
+    hoverRect.addEventListener("touchend", hideHover);
+    hoverRect.addEventListener("touchcancel", hideHover);
+}
+
+// ── History Watchlist — server-side, per-user (web/history.py) ──────
+// Persisted by the backend the moment a job finishes, so it's the same
+// regardless of which device or browser opens the History tab — unlike
+// the old localStorage version, which only existed in whichever browser
+// happened to be open when the run completed.
+const RATING_DISPLAY = {
+    "Strong Buy":  { zh: "买入+", en: "BUY+",  cls: "buy"  },
+    "Buy":         { zh: "买入",  en: "BUY",   cls: "buy"  },
+    "Overweight":  { zh: "增持",  en: "OW",    cls: "buy"  },
+    "Hold":        { zh: "持有",  en: "HOLD",  cls: "hold" },
+    "Underweight": { zh: "减持",  en: "UW",    cls: "hold" },
+    "Sell":        { zh: "卖出",  en: "SELL",  cls: "sell" },
+    "Strong Sell": { zh: "卖出+", en: "SELL+", cls: "sell" },
+};
+
+// Client-side star + search state — starred keys live in localStorage so
+// the "important" flag persists across sessions independently of the
+// server-side history record. Filter mode toggles between "all" and
+// "starred-only" via the ☆/★ toolbar button.
+const HISTORY_STARRED_KEY = "tradingagents.starred";
+function _getStarred() {
+    try { return new Set(JSON.parse(localStorage.getItem(HISTORY_STARRED_KEY) || "[]")); }
+    catch (_) { return new Set(); }
+}
+function _setStarred(set) {
+    localStorage.setItem(HISTORY_STARRED_KEY, JSON.stringify([...set]));
+}
+function _histKey(t, d) { return `${t}@${d}`; }
+
+let _historyState = { items: [], query: "", starredOnly: false };
+
+function _applyHistoryFilters() {
+    const q = _historyState.query.trim().toLowerCase();
+    const starred = _getStarred();
+    return _historyState.items.filter(it => {
+        if (_historyState.starredOnly && !starred.has(_histKey(it.ticker, it.trade_date))) return false;
+        if (!q) return true;
+        return (it.ticker || "").toLowerCase().includes(q)
+            || (it.trade_date || "").includes(q)
+            || (it.decision || "").toLowerCase().includes(q);
     });
 }
 
-// ── Local History Watchlist Helper Functions ─────────────────────────
-function saveToHistory(ticker, date, rating, action, fullData) {
-    try {
-        const key = 'tradingagents.history';
-        const listStr = localStorage.getItem(key);
-        let list = listStr ? JSON.parse(listStr) : [];
-        
-        list = list.filter(item => !(item.ticker === ticker && item.date === date));
-        list.unshift({
-            ticker: ticker,
-            date: date,
-            rating: rating || "Hold",
-            action: action || "HOLD",
-            timestamp: Date.now()
-        });
-        list = list.slice(0, 20);
-        localStorage.setItem(key, JSON.stringify(list));
-        
-        const reportKey = `tradingagents.report.${ticker}.${date}`;
-        localStorage.setItem(reportKey, JSON.stringify(fullData));
-        
-        renderHistoryList();
-    } catch (e) {
-        console.error("Failed to save history", e);
-    }
-}
-
-function renderHistoryList() {
+async function renderHistoryList() {
     const listEl = document.getElementById("history-list");
     if (!listEl) return;
-    listEl.innerHTML = "";
     try {
-        const key = 'tradingagents.history';
-        const listStr = localStorage.getItem(key);
-        const list = listStr ? JSON.parse(listStr) : [];
-        if (list.length === 0) {
-            listEl.innerHTML = `<div class="empty-state">${currentLang === 'zh' ? '无历史记录' : 'No history yet'}</div>`;
-            return;
-        }
-        list.forEach(item => {
-            const row = document.createElement("div");
-            row.className = "history-item";
-            const ratingText = item.rating;
-            const action = item.action.toUpperCase();
-            
-            const RATING_MAP = {
-                "Strong Buy": { "zh": "买入+", "en": "BUY+" },
-                "Buy": { "zh": "买入", "en": "BUY" },
-                "Overweight": { "zh": "增持", "en": "OW" },
-                "Hold": { "zh": "持有", "en": "HOLD" },
-                "Underweight": { "zh": "减持", "en": "UW" },
-                "Sell": { "zh": "卖出", "en": "SELL" },
-                "Strong Sell": { "zh": "卖出+", "en": "SELL+" }
-            };
-            const mapped = RATING_MAP[ratingText] || RATING_MAP[action];
-            const displayRating = mapped ? mapped[currentLang] : ratingText;
-
-            let badgeClass = "hold";
-            if (action.includes("BUY")) badgeClass = "buy";
-            else if (action.includes("SELL")) badgeClass = "sell";
-
-            row.innerHTML = `
-                <div>
-                    <span class="hist-sym">${item.ticker}</span>
-                    <span class="hist-date">${item.date}</span>
-                </div>
-                <span class="hist-badge ${badgeClass}">${displayRating}</span>
-            `;
-            
-            row.addEventListener("click", () => {
-                loadHistoryItem(item.ticker, item.date);
-            });
-            listEl.appendChild(row);
-        });
+        const resp = await fetch("/api/history");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const { items } = await resp.json();
+        _historyState.items = items || [];
+        _rerenderHistory();
     } catch (e) {
         console.error("Failed to render history list", e);
     }
 }
 
-function loadHistoryItem(ticker, date) {
-    try {
-        const key = `tradingagents.report.${ticker}.${date}`;
-        const dataStr = localStorage.getItem(key);
-        if (dataStr) {
-            const data = JSON.parse(dataStr);
-            if (typeof window.__taDisplayResults === "function") {
-                window.__taDisplayResults(data);
-            } else {
-                console.error("displayResults not ready yet; is DOMContentLoaded fired?");
-            }
+function _rerenderHistory() {
+    const listEl = document.getElementById("history-list");
+    if (!listEl) return;
+    const filtered = _applyHistoryFilters();
+    listEl.innerHTML = "";
+    if (filtered.length === 0) {
+        const msg = _historyState.query
+            ? (currentLang === 'zh' ? '无匹配记录' : 'No matches')
+            : (currentLang === 'zh' ? '无历史记录' : 'No history yet');
+        listEl.innerHTML = `<div class="empty-state">${msg}</div>`;
+        return;
+    }
+    const starred = _getStarred();
+    filtered.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "history-item";
+        const isRunning = item.status === "running";
+        const key = _histKey(item.ticker, item.trade_date);
+        const isStarred = starred.has(key);
+        let badgeText, badgeClass;
+        if (isRunning) {
+            row.classList.add("running");
+            badgeText = currentLang === 'zh' ? "分析中" : "Running";
+            badgeClass = "running";
         } else {
-            alert(currentLang === 'zh' ? "未找到该历史报告的数据" : "Report data not found in local storage.");
+            const ratingText = item.decision || "Hold";
+            const display = RATING_DISPLAY[ratingText];
+            badgeText = display ? display[currentLang] : ratingText;
+            badgeClass = display ? display.cls : "hold";
+        }
+
+        row.innerHTML = `
+            <button class="hist-star ${isStarred ? 'on' : ''}" type="button" title="${currentLang==='zh'?'星标':'Star'}">${isStarred ? '★' : '☆'}</button>
+            <div class="hist-meta">
+                <span class="hist-sym">${escapeHtml(item.ticker)}</span>
+                <span class="hist-date">${escapeHtml(item.trade_date)}</span>
+            </div>
+            <span class="hist-badge ${badgeClass}">
+                ${isRunning ? '<span class="hist-spinner"></span>' : ''}${badgeText}
+            </span>
+        `;
+
+        // Star button — stopPropagation so it doesn't also open the report.
+        row.querySelector(".hist-star").addEventListener("click", (e) => {
+            e.stopPropagation();
+            const s = _getStarred();
+            if (s.has(key)) s.delete(key); else s.add(key);
+            _setStarred(s);
+            _rerenderHistory();
+        });
+
+        row.addEventListener("click", () => {
+            if (isRunning) {
+                if (typeof window.__taSwitchMobileTab === "function") {
+                    window.__taSwitchMobileTab("analyze");
+                }
+                const loadingView = document.getElementById("loading-view");
+                if (loadingView) {
+                    document.querySelectorAll(".center-view").forEach(v => v.classList.remove("active"));
+                    const results = document.getElementById("results-view");
+                    if (results) results.classList.remove("active");
+                    loadingView.classList.add("active");
+                }
+                return;
+            }
+            loadHistoryItem(item.ticker, item.trade_date);
+            if (typeof window.__taSwitchMobileTab === "function") {
+                window.__taSwitchMobileTab("analyze");
+            }
+        });
+        listEl.appendChild(row);
+    });
+}
+
+// Escape helper — lifted from inside the DOMContentLoaded closure so
+// _rerenderHistory (defined at module scope) can use it too.
+if (typeof escapeHtml !== "function") {
+    // eslint-disable-next-line no-var
+    var escapeHtml = function (s) {
+        const d = document.createElement("div");
+        d.textContent = s == null ? "" : String(s);
+        return d.innerHTML;
+    };
+}
+
+async function loadHistoryItem(ticker, date) {
+    try {
+        const resp = await fetch(`/api/history/${encodeURIComponent(ticker)}/${encodeURIComponent(date)}`);
+        if (!resp.ok) {
+            alert(currentLang === 'zh' ? "未找到该历史报告的数据" : "Report data not found.");
+            return;
+        }
+        const data = await resp.json();
+        if (typeof window.__taDisplayResults === "function") {
+            window.__taDisplayResults(data);
+        } else {
+            console.error("displayResults not ready yet; is DOMContentLoaded fired?");
         }
     } catch (e) {
         console.error("Failed to load history item", e);
@@ -1701,8 +2467,7 @@ function initTOCScroller() {
     const scroller = document.querySelector("#results-view") || document.querySelector(".main-content");
     if (!links.length || !sections.length || !scroller) return;
 
-    // Handle scroll highlighting
-    scroller.addEventListener("scroll", () => {
+    function syncActiveSection() {
         let activeId = "";
         const scrollPos = scroller.scrollTop + 60; // offset for headers
 
@@ -1721,7 +2486,20 @@ function initTOCScroller() {
             const isActive = link.getAttribute("href") === `#${activeId}`;
             link.classList.toggle("active", isActive);
         });
-    });
+
+        // Let the mobile report-nav pill reflect where the reader is now
+        // (the "定位" — always-visible current-section indicator).
+        if (typeof window.__taOnSectionChange === "function") {
+            window.__taOnSectionChange(activeId);
+        }
+    }
+
+    scroller.addEventListener("scroll", syncActiveSection);
+    // Exposed so displayResults() can re-sync once the report is actually
+    // visible — running it while #results-view is still display:none gives
+    // every section offsetTop 0, which wrongly selects the last one.
+    window.__taSyncActiveSection = syncActiveSection;
+    syncActiveSection(); // best-effort initial (corrected on first display)
 
     // Handle click smooth scroll within the report scroller
     links.forEach(link => {
@@ -1739,13 +2517,220 @@ function initTOCScroller() {
     });
 }
 
+// ── Report navigation ────────────────────────────────────────────────
+// Two presentations of the same nav list (the CSS switches at ≤1024px):
+//   • Desktop: a draggable, collapsible floating panel (position:fixed,
+//     position persisted to localStorage) that doesn't steal layout width
+//     from the report column.
+//   • Mobile:  a bottom sheet opened by a floating pill (.toc-fab). The
+//     pill always shows the current section (updated from the scroll spy
+//     in initTOCScroller via window.__taOnSectionChange), so the reader
+//     can see where they are without opening anything — the "定位" ask.
+(function initReportNav() {
+    const panel = document.getElementById('toc-sidebar');
+    const handle = document.getElementById('toc-drag-handle');
+    const toggleBtn = document.getElementById('toc-collapse-btn');
+    if (!panel || !handle || !toggleBtn) return;
+
+    const TABLET_BP = 1024;
+    const isMobile = () => window.innerWidth <= TABLET_BP;
+
+    // ── Mobile: floating pill + backdrop (created once; hidden on desktop
+    //    via CSS). ──
+    const fab = document.createElement('button');
+    fab.className = 'toc-fab';
+    fab.id = 'toc-fab';
+    fab.type = 'button';
+    fab.innerHTML = '<span class="fab-icon">☰</span>'
+        + '<span class="fab-label" data-zh="报告导航" data-en="Contents">报告导航</span>';
+    document.body.appendChild(fab);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'toc-backdrop';
+    backdrop.id = 'toc-backdrop';
+    document.body.appendChild(backdrop);
+
+    const appContainer = document.querySelector('.app-container');
+    const resultsView = document.getElementById('results-view');
+
+    function sheetIsOpen() { return panel.classList.contains('sheet-open'); }
+
+    function updateFabVisibility() {
+        const tab = appContainer ? appContainer.getAttribute('data-mobile-tab') : null;
+        const onAnalyze = !tab || tab === 'analyze';
+        const show = isMobile() && !sheetIsOpen() && onAnalyze
+            && resultsView && resultsView.classList.contains('active');
+        fab.classList.toggle('available', !!show);
+    }
+
+    function openSheet() {
+        panel.classList.remove('collapsed');
+        panel.classList.add('sheet-open');
+        backdrop.classList.add('visible');
+        updateFabVisibility();
+    }
+    function closeSheet() {
+        panel.classList.remove('sheet-open');
+        backdrop.classList.remove('visible');
+        updateFabVisibility();
+    }
+
+    fab.addEventListener('click', openSheet);
+    backdrop.addEventListener('click', closeSheet);
+    // Tapping any nav link closes the sheet (its own smooth-scroll handler
+    // in initTOCScroller still runs — separate listener, both fire).
+    const navEl = panel.querySelector('.toc-nav');
+    if (navEl) {
+        navEl.addEventListener('click', (e) => {
+            if (isMobile() && e.target.closest('.toc-link')) closeSheet();
+        });
+    }
+
+    // Keep the pill label in sync with the current section (called by the
+    // scroll spy). Falls back to the default label if the id isn't found.
+    window.__taOnSectionChange = (activeId) => {
+        const label = fab.querySelector('.fab-label');
+        if (!label) return;
+        const link = panel.querySelector(`.toc-link[href="#${activeId}"]`);
+        const name = link ? link.querySelector('.toc-name') : null;
+        if (name) label.textContent = name.textContent;
+    };
+
+    if (resultsView) {
+        new MutationObserver(updateFabVisibility)
+            .observe(resultsView, { attributes: true, attributeFilter: ['class'] });
+    }
+    if (appContainer) {
+        new MutationObserver(updateFabVisibility)
+            .observe(appContainer, { attributes: true, attributeFilter: ['data-mobile-tab'] });
+    }
+    updateFabVisibility();
+
+    // ── Desktop: draggable + collapsible floating panel ──
+    const POS_KEY = 'tradingagents.tocPosition';
+    const COLLAPSED_KEY = 'tradingagents.tocCollapsed';
+    const MARGIN = 8;
+
+    function clamp(pos) {
+        const maxLeft = window.innerWidth - panel.offsetWidth - MARGIN;
+        const maxTop = window.innerHeight - handle.offsetHeight - MARGIN;
+        return {
+            left: Math.min(Math.max(MARGIN, pos.left), Math.max(MARGIN, maxLeft)),
+            top: Math.min(Math.max(MARGIN, pos.top), Math.max(MARGIN, maxTop)),
+        };
+    }
+    function applyPosition(pos) {
+        panel.style.left = pos.left + 'px';
+        panel.style.top = pos.top + 'px';
+        panel.style.right = 'auto';
+    }
+    function setCollapsed(collapsed) {
+        panel.classList.toggle('collapsed', collapsed);
+        toggleBtn.textContent = collapsed ? '+' : '−';
+        localStorage.setItem(COLLAPSED_KEY, String(collapsed));
+    }
+
+    function initDesktopPosition() {
+        let savedPos = null;
+        try { savedPos = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); } catch (e) { /* ignore */ }
+        requestAnimationFrame(() => {
+            const initial = savedPos || { left: window.innerWidth - panel.offsetWidth - 24, top: 100 };
+            applyPosition(clamp(initial));
+        });
+        const savedCollapsed = localStorage.getItem(COLLAPSED_KEY);
+        setCollapsed(savedCollapsed === 'true'); // desktop first-run: expanded
+    }
+
+    if (isMobile()) {
+        panel.classList.remove('collapsed');
+        toggleBtn.textContent = '×';   // acts as the sheet's close button
+    } else {
+        initDesktopPosition();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        if (isMobile()) { closeSheet(); return; }
+        setCollapsed(!panel.classList.contains('collapsed'));
+    });
+
+    // Dragging (desktop only) — mouse + touch through one set of callbacks.
+    let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+    function pointFrom(e) { return e.touches ? e.touches[0] : e; }
+    function onDragStart(e) {
+        if (isMobile() || e.target === toggleBtn) return;
+        dragging = true;
+        const p = pointFrom(e);
+        startX = p.clientX; startY = p.clientY;
+        const rect = panel.getBoundingClientRect();
+        startLeft = rect.left; startTop = rect.top;
+        panel.classList.add('dragging');
+        if (e.cancelable) e.preventDefault();
+    }
+    function onDragMove(e) {
+        if (!dragging) return;
+        const p = pointFrom(e);
+        applyPosition(clamp({ left: startLeft + (p.clientX - startX), top: startTop + (p.clientY - startY) }));
+        if (e.cancelable) e.preventDefault();
+    }
+    function onDragEnd() {
+        if (!dragging) return;
+        dragging = false;
+        panel.classList.remove('dragging');
+        const rect = panel.getBoundingClientRect();
+        localStorage.setItem(POS_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
+    }
+
+    handle.addEventListener('mousedown', onDragStart);
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onDragEnd);
+    handle.addEventListener('touchstart', onDragStart, { passive: false });
+    window.addEventListener('touchmove', onDragMove, { passive: false });
+    window.addEventListener('touchend', onDragEnd);
+
+    // Adapt when the viewport changes. Crucially, only re-setup when the
+    // mode actually flips (desktop↔mobile) — mobile browsers fire `resize`
+    // constantly as the URL bar shows/hides on scroll, and closing the
+    // sheet on every one of those would make it unusable.
+    let wasMobile = isMobile();
+    window.addEventListener('resize', () => {
+        const nowMobile = isMobile();
+        if (nowMobile === wasMobile) {
+            // Same mode: desktop needs re-clamping so a shrunk window keeps
+            // the panel on-screen; mobile needs nothing (sheet stays as-is).
+            if (!nowMobile) {
+                const rect = panel.getBoundingClientRect();
+                applyPosition(clamp({ left: rect.left, top: rect.top }));
+            }
+            updateFabVisibility();
+            return;
+        }
+        wasMobile = nowMobile;
+        if (nowMobile) {
+            panel.classList.remove('collapsed', 'dragging', 'sheet-open');
+            panel.style.left = ''; panel.style.top = ''; panel.style.right = '';
+            toggleBtn.textContent = '×';
+            backdrop.classList.remove('visible');
+        } else {
+            panel.classList.remove('sheet-open');
+            backdrop.classList.remove('visible');
+            toggleBtn.textContent = panel.classList.contains('collapsed') ? '+' : '−';
+            initDesktopPosition();
+        }
+        updateFabVisibility();
+    });
+})();
+
 // ── Reading font-size control ────────────────────────────────────────
 // Binds the A− / A / A+ / A++ chip in the sidebar header to
 // --reading-scale on <html>, which all .markdown-content sizing keys
 // off. Persisted in localStorage so the choice sticks across sessions.
 (function initReadingScale() {
     const KEY = 'tradingagents.readingScale';
-    const btns = document.querySelectorAll('.rc-btn');
+    // Scoped to .reading-controls: .rc-btn is shared with the screen-mode
+    // buttons below, which don't carry data-scale — an unscoped query here
+    // would parseFloat(undefined) -> NaN for those and forcibly clear their
+    // active highlight every time a font-size button is clicked.
+    const btns = document.querySelectorAll('.reading-controls .rc-btn');
     if (!btns.length) return;
 
     const saved = parseFloat(localStorage.getItem(KEY) || '1');
@@ -1806,77 +2791,95 @@ function initTOCScroller() {
 
 
 // ── Mobile / Tablet Responsive UI ────────────────────────────────────────────
-// Injects a topbar and floating-action-button (FAB) for small screens,
-// and wires the sidebar as a slide-over drawer.
+// Injects a compact topbar and a persistent bottom tab bar (Analyze /
+// History / Profile) for small screens — a native-app-style navigation
+// model rather than a hamburger-triggered slide-over drawer. Which
+// section is visible is driven entirely by style.css via the
+// .app-container[data-mobile-tab="..."] rules; this IIFE just owns the
+// tab bar's markup and the attribute it writes.
 (function initMobileUI() {
 
     const TABLET_BP = 1024;   // px
-    const MOBILE_BP = 767;    // px
 
-    function isMobile()  { return window.innerWidth <= MOBILE_BP; }
     function isTablet()  { return window.innerWidth <= TABLET_BP; }
 
     if (!isTablet()) return;   // desktop: nothing to do
 
-    // ── 1. Inject mobile topbar ─────────────────────────────────────
+    const appContainer = document.querySelector('.app-container');
     const mainContent = document.querySelector('.main-content');
-    if (!mainContent) return;
+    if (!appContainer || !mainContent) return;
 
+    // ── 1. Inject mobile topbar ─────────────────────────────────────
     const topbar = document.createElement('div');
     topbar.className = 'mobile-topbar';
     topbar.style.display = 'flex';   // always show on tablet/mobile (JS only runs when isTablet())
     topbar.innerHTML = `
-      <button class="menu-btn" id="mob-menu-btn" aria-label="菜单">
-        <span></span><span></span><span></span>
-      </button>
       <span class="logo-icon" style="color:var(--accent-pink);font-size:13px">■</span>
       <span class="logo-text">TRADING AGENTS</span>
       <span class="topbar-ticker" id="mob-ticker"></span>
     `;
     mainContent.insertBefore(topbar, mainContent.firstChild);
 
-    // ── 2. Floating action button (mobile only) ─────────────────────
-    const fab = document.createElement('button');
-    fab.className = 'mobile-fab';
-    fab.id = 'mob-fab';
-    fab.style.display = 'flex';   // always show on mobile (JS only runs when isTablet())
-    fab.textContent = '开始分析';
-    document.body.appendChild(fab);
-
-    // FAB triggers the same form submit as the desktop button
-    fab.addEventListener('click', () => {
-        const configForm = document.getElementById('config-form');
-        if (configForm) {
-            configForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    // ── 1b. Relocate the ticker/date form so it reads top-to-bottom as
+    // [brand topbar] → [form] → [welcome/loading/results] on the Analyze
+    // tab, instead of the form's original sidebar position (before the
+    // topbar in source order, which on mobile would render it above the
+    // brand bar). Restored to its original spot if the viewport is
+    // widened back past the tablet breakpoint.
+    const configForm = document.getElementById('config-form');
+    const formHome = configForm ? { parent: configForm.parentNode, next: configForm.nextSibling } : null;
+    function placeConfigForm() {
+        if (!configForm || !formHome) return;
+        if (isTablet()) {
+            if (configForm.previousElementSibling !== topbar) {
+                mainContent.insertBefore(configForm, topbar.nextSibling);
+            }
+        } else if (configForm.parentNode !== formHome.parent) {
+            formHome.parent.insertBefore(configForm, formHome.next);
         }
-    });
-
-    // ── 3. Sidebar drawer toggle ────────────────────────────────────
-    const sidebar = document.querySelector('.sidebar-config');
-    const menuBtn = document.getElementById('mob-menu-btn');
-
-    function openDrawer() {
-        sidebar.classList.add('mobile-open');
-        document.body.style.overflow = 'hidden';
     }
-    function closeDrawer() {
-        sidebar.classList.remove('mobile-open');
-        document.body.style.overflow = '';
-    }
-    if (menuBtn) menuBtn.addEventListener('click', openDrawer);
+    placeConfigForm();
 
-    // Close drawer on tap-outside (the ::after overlay captures clicks)
-    sidebar.addEventListener('click', (e) => {
-        if (e.target === sidebar) closeDrawer();
-    });
-    // Close on any link/button inside drawer
-    sidebar.querySelectorAll('button, a').forEach(el => {
-        el.addEventListener('click', () => {
-            if (isMobile()) closeDrawer();
+    // ── 2. Bottom tab bar: Analyze / History / Profile ──────────────
+    const TABS = [
+        { key: 'analyze', icon: '▰', zh: '分析', en: 'Analyze' },
+        { key: 'history', icon: '▤', zh: '历史', en: 'History' },
+        { key: 'profile', icon: '◆', zh: '我的', en: 'Profile' },
+    ];
+    const tabbar = document.createElement('nav');
+    tabbar.className = 'mobile-tabbar';
+    tabbar.style.display = 'flex';   // always show on tablet/mobile (JS only runs when isTablet())
+    tabbar.innerHTML = TABS.map((t, i) => `
+      <button class="tab-btn-mobile${i === 0 ? ' active' : ''}" data-tab="${t.key}" type="button">
+        <span class="tab-icon">${t.icon}</span>
+        <span class="tab-label" data-zh="${t.zh}" data-en="${t.en}">${t.zh}</span>
+      </button>
+    `).join('');
+    document.body.appendChild(tabbar);
+
+    function setActiveTab(key) {
+        appContainer.setAttribute('data-mobile-tab', key);
+        tabbar.querySelectorAll('.tab-btn-mobile').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === key);
         });
+        // History is server-side and shared across devices now — refresh
+        // on every visit rather than only once at page load, so a run
+        // finished on another device shows up here too.
+        if (key === 'history' && typeof renderHistoryList === 'function') {
+            renderHistoryList();
+        }
+    }
+    tabbar.querySelectorAll('.tab-btn-mobile').forEach(btn => {
+        btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
     });
+    setActiveTab('analyze');
 
-    // ── 4. Sync topbar ticker text with main form ───────────────────
+    // Exposed so loadHistoryItem() can jump back to the Analyze tab after
+    // loading a past report from the History tab — otherwise the loaded
+    // result would render behind the still-active History screen.
+    window.__taSwitchMobileTab = setActiveTab;
+
+    // ── 3. Sync topbar ticker text with main form ───────────────────
     const tickerInput = document.getElementById('ticker');
     const mobTicker   = document.getElementById('mob-ticker');
     if (tickerInput && mobTicker) {
@@ -1888,36 +2891,331 @@ function initTOCScroller() {
         updateMobTicker();
     }
 
-    // ── 5. Keep FAB label in sync with submit-btn state ─────────────
-    const submitBtn = document.getElementById('submit-btn');
-    if (submitBtn && fab) {
-        const mo = new MutationObserver(() => {
-            const span = submitBtn.querySelector('span');
-            fab.textContent = span ? span.textContent : submitBtn.textContent;
-            fab.disabled = submitBtn.disabled;
-        });
-        mo.observe(submitBtn, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
-    }
-
-    // ── 6. On results / loading view switch, close drawer ───────────
-    const origShowView = window.__taShowView;
-    // Patch showView inside closure by watching class changes
-    const observer = new MutationObserver(() => {
-        const loading = document.getElementById('loading-view');
-        const results = document.getElementById('results-view');
-        if ((loading && loading.classList.contains('active')) ||
-            (results && results.classList.contains('active'))) {
-            closeDrawer();
-        }
-    });
-    ['loading-view', 'results-view', 'welcome-view'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) observer.observe(el, { attributes: true, attributeFilter: ['class'] });
-    });
-
-    // ── 7. Resize handler: teardown if going back to desktop ─────────
+    // ── 4. Resize handler: keep topbar/tabbar in sync with viewport ──
+    // topbar/tabbar visibility is driven by an inline style set once
+    // above (needed since isTablet() is only known at that moment) —
+    // inline styles always beat the stylesheet's display:none, so
+    // without this they'd stay visible forever once shown, even after
+    // the window is later widened past the tablet breakpoint (e.g.
+    // exiting Split View, dragging to an external display).
     window.addEventListener('resize', () => {
-        if (!isTablet()) closeDrawer();
+        if (!isTablet()) {
+            topbar.style.display = 'none';
+            tabbar.style.display = 'none';
+        } else {
+            topbar.style.display = 'flex';
+            tabbar.style.display = 'flex';
+        }
+        placeConfigForm();
     });
 
 })();
+
+// ══════════════════════════════════════════════════════════════════════
+//  Confidence gauge, price chart, theme, notifications, hotkeys, PWA.
+//  All module-level so any handler can call them.
+// ══════════════════════════════════════════════════════════════════════
+
+// ---- Confidence 0-100 gauge -----------------------------------------
+function renderConfidence(confidence) {
+    const box = document.getElementById("confidence-gauge");
+    if (!box) return;
+    if (!confidence || typeof confidence.score !== "number") {
+        box.hidden = true;
+        return;
+    }
+    box.hidden = false;
+    const score = Math.max(0, Math.min(100, confidence.score));
+    const circumference = 163.36;          // 2π × 26 (matches SVG)
+    const offset = circumference * (1 - score / 100);
+    const fill = document.getElementById("conf-ring-fill");
+    if (fill) fill.setAttribute("stroke-dashoffset", offset.toFixed(2));
+    document.getElementById("conf-ring-num").textContent = score;
+
+    box.dataset.band = confidence.band || "medium";
+    const tag = document.getElementById("conf-tag");
+    const BAND_LABELS = {
+        high:   { zh: "高置信度", en: "High confidence" },
+        medium: { zh: "中置信度", en: "Medium confidence" },
+        low:    { zh: "低置信度", en: "Low confidence" },
+    };
+    const b = BAND_LABELS[confidence.band] || BAND_LABELS.medium;
+    tag.textContent = b[currentLang] || b.zh;
+
+    // Tooltip breakdown: hover to see per-component score.
+    const c = confidence.components || {};
+    const detail = document.getElementById("conf-detail");
+    if (detail) {
+        detail.textContent = currentLang === 'zh'
+            ? `辩论深度 ${c.debate_depth||0}·多空平衡 ${c.debate_balance||0}·轮次 ${c.debate_rounds||0}·一致性 ${c.signal_consistency||0}·计划 ${c.plan_completeness||0}`
+            : `depth ${c.debate_depth||0}·balance ${c.debate_balance||0}·rounds ${c.debate_rounds||0}·consistency ${c.signal_consistency||0}·plan ${c.plan_completeness||0}`;
+    }
+}
+
+// ---- Price chart (Lightweight Charts) --------------------------------
+let _chartApi = null, _chartSeries = null, _chartCtx = null;
+function renderPriceChart(ctx) {
+    _chartCtx = ctx;
+    const panel = document.getElementById("chart-panel");
+    if (!panel || !ctx || !ctx.ticker || !ctx.date) return;
+    panel.hidden = false;
+    document.getElementById("chart-symbol").textContent = ctx.ticker;
+    document.getElementById("legend-entry").textContent  = ctx.entry  != null ? ctx.entry.toFixed(2)  : '--';
+    document.getElementById("legend-stop").textContent   = ctx.stop   != null ? ctx.stop.toFixed(2)   : '--';
+    document.getElementById("legend-target").textContent = ctx.target != null ? ctx.target.toFixed(2) : '--';
+
+    const active = document.querySelector('.chart-range-btn.active');
+    _loadChart(active ? active.dataset.range : '3M');
+}
+
+async function _loadChart(range) {
+    const container = document.getElementById("chart-container");
+    const status = document.getElementById("chart-status");
+    if (!container || !_chartCtx) return;
+    if (typeof LightweightCharts === "undefined") {
+        status.textContent = currentLang === 'zh' ? "图表库未加载（请检查网络）" : "Chart library not loaded";
+        return;
+    }
+    status.textContent = currentLang === 'zh' ? "加载中…" : "loading…";
+
+    try {
+        const resp = await fetch(`/api/price/${encodeURIComponent(_chartCtx.ticker)}?date=${encodeURIComponent(_chartCtx.date)}&range=${range}`);
+        const data = await resp.json();
+        if (data.status !== "success" || !data.candles || data.candles.length === 0) {
+            status.textContent = currentLang === 'zh' ? `无 ${_chartCtx.ticker} 行情数据` : `No price data for ${_chartCtx.ticker}`;
+            container.innerHTML = "";
+            return;
+        }
+        _drawChart(container, data.candles);
+        status.textContent = `${data.candles.length} bars · ${range}`;
+    } catch (e) {
+        console.error("chart load failed", e);
+        status.textContent = currentLang === 'zh' ? "加载失败" : "load failed";
+    }
+}
+
+function _drawChart(container, candles) {
+    // Recreate on every draw so range / theme switches take effect cleanly.
+    container.innerHTML = "";
+    const isLight = document.body.classList.contains("theme-light");
+    _chartApi = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: 320,
+        layout: {
+            background: { type: 'solid', color: isLight ? '#ffffff' : '#0d1117' },
+            textColor:  isLight ? '#1f2937' : '#c7cdd5',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        },
+        grid: {
+            vertLines: { color: isLight ? '#eef1f5' : '#212830' },
+            horzLines: { color: isLight ? '#eef1f5' : '#212830' },
+        },
+        rightPriceScale: { borderColor: isLight ? '#d1d5db' : '#30363d' },
+        timeScale: {
+            borderColor: isLight ? '#d1d5db' : '#30363d',
+            timeVisible: true, secondsVisible: false,
+        },
+        crosshair: { mode: 1 },
+    });
+    _chartSeries = _chartApi.addCandlestickSeries({
+        upColor:   '#30D158', downColor: '#FF453A',
+        wickUpColor: '#30D158', wickDownColor: '#FF453A',
+        borderVisible: false,
+    });
+    _chartSeries.setData(candles);
+
+    // Trade-date vertical marker via price-line workaround: add markers on
+    // the actual bar so the trader can see "this is the day we analyzed".
+    const dateBar = candles.find(c => c.time === _chartCtx.date)
+                 || candles[candles.length - 1];
+    if (dateBar) {
+        _chartSeries.setMarkers([{
+            time: dateBar.time, position: 'aboveBar', color: '#4f8cff',
+            shape: 'arrowDown',
+            text: currentLang === 'zh' ? '分析基准日' : 'Analysis date',
+        }]);
+    }
+
+    // Entry / Stop / Target overlays.
+    if (_chartCtx.entry != null) {
+        _chartSeries.createPriceLine({
+            price: _chartCtx.entry, color: '#4f8cff', lineWidth: 2, lineStyle: 0,
+            axisLabelVisible: true, title: currentLang === 'zh' ? '入场' : 'Entry',
+        });
+    }
+    if (_chartCtx.stop != null) {
+        _chartSeries.createPriceLine({
+            price: _chartCtx.stop, color: '#FF453A', lineWidth: 2, lineStyle: 2,
+            axisLabelVisible: true, title: currentLang === 'zh' ? '止损' : 'Stop',
+        });
+    }
+    if (_chartCtx.target != null) {
+        _chartSeries.createPriceLine({
+            price: _chartCtx.target, color: '#30D158', lineWidth: 2, lineStyle: 2,
+            axisLabelVisible: true, title: currentLang === 'zh' ? '目标' : 'Target',
+        });
+    }
+
+    _chartApi.timeScale().fitContent();
+
+    // Resize on window changes.
+    const ro = new ResizeObserver(() => {
+        if (_chartApi) _chartApi.applyOptions({ width: container.clientWidth });
+    });
+    ro.observe(container);
+}
+
+// Range buttons.
+document.addEventListener("click", (e) => {
+    const b = e.target.closest(".chart-range-btn");
+    if (!b) return;
+    document.querySelectorAll(".chart-range-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    if (_chartCtx) _loadChart(b.dataset.range);
+});
+
+// ---- Theme switcher --------------------------------------------------
+const THEME_KEY = "tradingagents.theme";
+function applyTheme(name) {
+    document.body.classList.toggle("theme-light", name === "light");
+    document.querySelectorAll('[data-theme]').forEach(b => {
+        b.setAttribute("aria-current", b.dataset.theme === name ? "true" : "false");
+    });
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", name === "light" ? "#f5f7fa" : "#080A0C");
+    // Redraw chart to pick up new colors.
+    if (_chartCtx) renderPriceChart(_chartCtx);
+    localStorage.setItem(THEME_KEY, name);
+}
+document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-theme]");
+    if (b) applyTheme(b.dataset.theme);
+});
+
+// ---- Desktop notifications ------------------------------------------
+const NOTIF_KEY = "tradingagents.notifEnabled";
+function notifEnabled() { return localStorage.getItem(NOTIF_KEY) === "1"; }
+async function toggleNotifications() {
+    if (!("Notification" in window)) {
+        alert(currentLang === 'zh' ? "浏览器不支持桌面通知" : "This browser doesn't support notifications");
+        return;
+    }
+    if (notifEnabled()) {
+        localStorage.setItem(NOTIF_KEY, "0");
+        _updateNotifButton();
+        return;
+    }
+    let perm = Notification.permission;
+    if (perm !== "granted") perm = await Notification.requestPermission();
+    if (perm === "granted") {
+        localStorage.setItem(NOTIF_KEY, "1");
+        _updateNotifButton();
+        new Notification("TradingAgents", {
+            body: currentLang === 'zh' ? "通知已开启：分析完成时会提醒你。" : "Notifications on. You'll get pinged when analyses finish.",
+            icon: "/icon.svg",
+        });
+    }
+}
+function _updateNotifButton() {
+    const btn = document.getElementById("notif-toggle-btn");
+    if (btn) btn.textContent = notifEnabled() ? "🔔" : "🔕";
+}
+function notifyIfEnabled(title, body) {
+    if (!notifEnabled() || !("Notification" in window)) return;
+    if (document.visibilityState === "visible") return;  // don't spam if user is already looking
+    try { new Notification(title, { body, icon: "/icon.svg" }); }
+    catch (e) { /* Safari quirks */ }
+}
+window.__taNotify = notifyIfEnabled;
+document.addEventListener("click", (e) => {
+    if (e.target.closest("#notif-toggle-btn")) toggleNotifications();
+});
+
+// ---- Analysis-depth preset ------------------------------------------
+// Each preset writes into the (still-existing) advanced fields so the
+// backend contract is unchanged and users can override in "Advanced".
+const DEPTH_PRESETS = {
+    fast:     { rounds: 1, deep: "deepseek-chat",     quick: "deepseek-chat" },
+    balanced: { rounds: 1, deep: "deepseek-reasoner", quick: "deepseek-chat" },
+    deep:     { rounds: 3, deep: "deepseek-reasoner", quick: "deepseek-chat" },
+};
+function applyDepthPreset(name) {
+    const p = DEPTH_PRESETS[name] || DEPTH_PRESETS.balanced;
+    const r = document.getElementById("max_debate_rounds");
+    const d = document.getElementById("deep_think_llm");
+    const q = document.getElementById("quick_think_llm");
+    if (r) r.value = p.rounds;
+    if (d) d.value = p.deep;
+    if (q) q.value = p.quick;
+    document.querySelectorAll(".depth-btn").forEach(b => b.classList.toggle("active", b.dataset.depth === name));
+    localStorage.setItem("tradingagents.depth", name);
+}
+document.addEventListener("click", (e) => {
+    const b = e.target.closest(".depth-btn");
+    if (b) applyDepthPreset(b.dataset.depth);
+});
+
+// ---- Global keyboard shortcuts --------------------------------------
+document.addEventListener("keydown", (e) => {
+    const active = document.activeElement;
+    const inField = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+
+    // Esc — close any open modal / dismiss suggest list.
+    if (e.key === "Escape") {
+        const modal = document.getElementById("disclaimer-modal");
+        // Only auto-close if user has already accepted (avoid bypassing the gate).
+        const list = document.getElementById("ticker-suggest-list");
+        if (list && !list.hidden) { list.hidden = true; return; }
+        const details = document.querySelectorAll("details[open]");
+        if (details.length) { /* leave open */ }
+    }
+
+    // "/" — focus search when not typing elsewhere.
+    if (e.key === "/" && !inField && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const s = document.getElementById("history-search");
+        if (s) s.focus();
+    }
+
+    // Cmd/Ctrl + Enter — submit the analyze form from anywhere.
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        const form = document.getElementById("config-form");
+        if (form) {
+            e.preventDefault();
+            form.requestSubmit ? form.requestSubmit() : form.submit();
+        }
+    }
+});
+
+// ---- History search wiring ------------------------------------------
+document.addEventListener("input", (e) => {
+    if (e.target && e.target.id === "history-search") {
+        _historyState.query = e.target.value;
+        _rerenderHistory();
+    }
+});
+document.addEventListener("click", (e) => {
+    const btn = e.target.closest("#history-filter-star");
+    if (!btn) return;
+    _historyState.starredOnly = !_historyState.starredOnly;
+    btn.textContent = _historyState.starredOnly ? "★" : "☆";
+    btn.classList.toggle("on", _historyState.starredOnly);
+    _rerenderHistory();
+});
+
+// ---- PWA service worker registration --------------------------------
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => { /* ignore */ });
+    });
+}
+
+// ---- Boot: restore preferences --------------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+    // Theme
+    applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+    // Depth preset
+    applyDepthPreset(localStorage.getItem("tradingagents.depth") || "balanced");
+    // Notif button icon
+    _updateNotifButton();
+});

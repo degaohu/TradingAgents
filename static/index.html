@@ -4,7 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TradingAgents Workstation</title>
+    <meta name="theme-color" content="#080A0C">
+    <meta name="description" content="Multi-agent LLM trading analysis workstation">
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <!-- TradingView Lightweight Charts (open source, ~30KB gzipped).
+         Loaded from jsDelivr; falls back to hiding the chart if offline. -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"
+            defer></script>
 </head>
 <body>
     <div class="app-container">
@@ -24,6 +33,12 @@
                     <button class="rc-btn" data-scale="1.15">A+</button>
                     <button class="rc-btn" data-scale="1.3">A++</button>
                 </div>
+                <div class="theme-controls" title="配色主题 / Color theme" style="margin-top:6px;width:100%;display:flex;align-items:center;gap:4px">
+                    <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-right:4px" data-zh="主题" data-en="THEME">主题</span>
+                    <button id="theme-btn-dark"  class="rc-btn" data-theme="dark"  aria-current="true">🌙</button>
+                    <button id="theme-btn-light" class="rc-btn" data-theme="light">☀️</button>
+                    <button id="notif-toggle-btn" class="rc-btn" title="桌面通知 / Desktop notifications" style="margin-left:auto">🔔</button>
+                </div>
                 <div class="screen-controls" title="屏幕模式 / Screen Mode" style="margin-top: 6px; width: 100%; display: flex; align-items: center; gap: 4px;">
                     <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-right: 4px;" data-zh="屏幕" data-en="SCREEN">屏幕</span>
                     <button id="screen-btn-default" class="rc-btn" data-mode="default" aria-current="true" data-zh="默认" data-en="Default">默认</button>
@@ -36,7 +51,7 @@
                 <div class="form-group">
                     <label for="ticker" data-zh="股票代码" data-en="Ticker Symbol">股票代码</label>
                     <div class="ticker-combobox" id="ticker-combobox">
-                        <input type="text" id="ticker" name="ticker" value="TLRY" required
+                        <input type="text" id="ticker" name="ticker" value="NVDA" required
                                placeholder="美股/A股/港股/ETF，如 AAPL、600519"
                                autocomplete="off" spellcheck="false" role="combobox"
                                aria-autocomplete="list" aria-expanded="false"
@@ -50,10 +65,64 @@
                     <input type="date" id="trade_date" name="trade_date" required>
                 </div>
 
+                <!-- Analysis depth preset — dials max_debate_rounds and the
+                     LLM tier from a single slider so the user picks
+                     wall-clock cost vs. quality instead of guessing at
+                     model names. See app.js `PRESETS` for the actual
+                     values written. -->
+                <div class="form-group depth-preset">
+                    <label data-zh="分析深度" data-en="Analysis Depth">分析深度</label>
+                    <div class="depth-btns" role="tablist">
+                        <button type="button" class="depth-btn" data-depth="fast">
+                            <span class="depth-icon">⚡</span>
+                            <span data-zh="快速" data-en="Fast">快速</span>
+                            <span class="depth-est">~30s</span>
+                        </button>
+                        <button type="button" class="depth-btn active" data-depth="balanced">
+                            <span class="depth-icon">⚖</span>
+                            <span data-zh="平衡" data-en="Balanced">平衡</span>
+                            <span class="depth-est">~2m</span>
+                        </button>
+                        <button type="button" class="depth-btn" data-depth="deep">
+                            <span class="depth-icon">🔬</span>
+                            <span data-zh="深度" data-en="Deep">深度</span>
+                            <span class="depth-est">~5m</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Advanced knobs — collapsed by default; the preset writes them. -->
+                <details class="advanced-config">
+                    <summary data-zh="高级参数" data-en="Advanced">高级参数</summary>
+                    <div class="form-group">
+                        <label for="max_debate_rounds" data-zh="辩论轮数" data-en="Debate Rounds">辩论轮数</label>
+                        <input type="number" id="max_debate_rounds" name="max_debate_rounds" value="1" min="1" max="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="deep_think_llm" data-zh="深度思考模型" data-en="Deep Model">深度思考模型</label>
+                        <input type="text" id="deep_think_llm" name="deep_think_llm" value="deepseek-reasoner">
+                    </div>
+                    <div class="form-group">
+                        <label for="quick_think_llm" data-zh="快速推理模型" data-en="Quick Model">快速推理模型</label>
+                        <input type="text" id="quick_think_llm" name="quick_think_llm" value="deepseek-chat">
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="checkpoint_enabled" name="checkpoint_enabled" checked>
+                        <label for="checkpoint_enabled" data-zh="启用断点续跑" data-en="Enable checkpoint resume">启用断点续跑（失败节点可从上次成功处继续）</label>
+                    </div>
+                </details>
+
                 <button type="submit" id="submit-btn" class="btn-primary">
                     <span data-zh="开始分析" data-en="Run Analysis">开始分析</span>
                     <div class="btn-glow"></div>
                 </button>
+                <!-- Remaining report quota (populated from /api/me). Hidden for
+                     admins (unlimited) and until the value is known. -->
+                <div id="quota-indicator" class="quota-indicator" style="display:none">
+                    <span class="quota-label" data-zh="剩余报告次数" data-en="Reports left">剩余报告次数</span>
+                    <span id="quota-value" class="quota-value">—</span>
+                    <span id="quota-warning" class="quota-warning"></span>
+                </div>
             </form>
 
             <!-- Watchlist / History Section -->
@@ -62,9 +131,28 @@
                     <span class="section-icon">▤</span>
                     <span data-zh="历史分析记录" data-en="Recent Analyses">历史分析记录</span>
                 </div>
+                <div class="history-toolbar">
+                    <input id="history-search" type="search" class="history-search"
+                           placeholder="搜索代码 / Search…"
+                           data-zh-placeholder="搜索代码 / 名称…"
+                           data-en-placeholder="Search ticker…">
+                    <button id="history-filter-star" type="button" class="hist-filter-btn"
+                            title="只看星标 / Starred only">☆</button>
+                </div>
                 <div id="history-list" class="history-list">
                     <!-- populated by localStorage in app.js -->
                 </div>
+            </div>
+
+            <!-- Account bar: current user + logout + admin-panel link
+                 (admin link only shown when /api/me reports is_admin). -->
+            <div id="account-bar" class="account-bar">
+                <span id="account-username" class="account-username">—</span>
+                <span id="account-version" class="account-version" title="版本 / Version"></span>
+                <a id="account-admin-link" class="account-admin-link" href="/admin"
+                   style="display:none;" data-zh="管理后台" data-en="Admin">管理后台</a>
+                <button id="account-logout-btn" class="account-logout-btn" type="button"
+                        data-zh="退出登录" data-en="Log out">退出登录</button>
             </div>
         </aside>
 
@@ -160,7 +248,7 @@
                     <div class="quote-bar-layout">
                         <!-- Quote left: ticker identity -->
                         <div class="quote-identity">
-                            <h2 class="ticker-title" id="res-ticker-lg">TLRY</h2>
+                            <h2 class="ticker-title" id="res-ticker-lg">NVDA</h2>
                             <div class="ticker-date" id="res-date-lg">--</div>
                             <div class="action-badge-container">
                                 <div class="action-label" data-zh="最终决策" data-en="Final Action">最终决策</div>
@@ -191,7 +279,7 @@
 
                     <!-- Metrics strip -->
                     <div class="kpi-strip">
-                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="股票代码" data-en="Ticker">股票代码</span><span id="res-ticker" class="kpi-val">TLRY</span></div>
+                        <div class="kpi-tile"><span class="kpi-lbl" data-zh="股票代码" data-en="Ticker">股票代码</span><span id="res-ticker" class="kpi-val">NVDA</span></div>
                         <div class="kpi-tile"><span class="kpi-lbl" data-zh="分析日期" data-en="Date">分析日期</span><span id="res-date" class="kpi-val">--</span></div>
                         <div class="kpi-tile"><span class="kpi-lbl" data-zh="入场价" data-en="Entry">入场价</span><span id="res-entry" class="kpi-val kpi-price">--</span></div>
                         <div class="kpi-tile kpi-bear"><span class="kpi-lbl" data-zh="止损" data-en="Stop Loss">止损</span><span id="res-stop" class="kpi-val kpi-price">--</span><span id="res-stop-pct" class="kpi-delta"></span></div>
@@ -209,7 +297,92 @@
                         </summary>
                         <p id="res-reasoning">--</p>
                     </details>
+
+                    <!-- Confidence gauge — populated from summary.confidence.
+                         Hidden until the analysis produces a score. -->
+                    <div id="confidence-gauge" class="confidence-gauge" hidden>
+                        <div class="conf-ring">
+                            <svg viewBox="0 0 60 60" width="60" height="60" aria-hidden="true">
+                                <circle cx="30" cy="30" r="26" class="conf-ring-track"/>
+                                <circle cx="30" cy="30" r="26" class="conf-ring-fill" id="conf-ring-fill"
+                                        stroke-dasharray="163.36" stroke-dashoffset="163.36"/>
+                            </svg>
+                            <span id="conf-ring-num">--</span>
+                        </div>
+                        <div class="conf-info">
+                            <div class="conf-title" data-zh="信心分" data-en="Confidence">信心分</div>
+                            <div id="conf-tag" class="conf-tag">—</div>
+                            <div id="conf-detail" class="conf-detail"></div>
+                        </div>
+                    </div>
                 </header>
+
+                <!-- Price chart panel: candlesticks with entry/stop/target overlays. -->
+                <section id="chart-panel" class="chart-panel" hidden>
+                    <div class="chart-panel-header">
+                        <div class="chart-title">
+                            <span class="chart-icon">📈</span>
+                            <span data-zh="价格走势 & 决策位" data-en="Price & Levels">价格走势 & 决策位</span>
+                            <span id="chart-symbol" class="chart-symbol"></span>
+                        </div>
+                        <div class="chart-range-btns" role="tablist">
+                            <button type="button" class="chart-range-btn" data-range="1M">1M</button>
+                            <button type="button" class="chart-range-btn active" data-range="3M">3M</button>
+                            <button type="button" class="chart-range-btn" data-range="6M">6M</button>
+                            <button type="button" class="chart-range-btn" data-range="1Y">1Y</button>
+                        </div>
+                    </div>
+                    <div id="chart-container" class="chart-container"></div>
+                    <div id="chart-legend" class="chart-legend">
+                        <span class="legend-item"><i class="legend-dot legend-entry"></i> <span data-zh="入场" data-en="Entry">入场</span> <b id="legend-entry">--</b></span>
+                        <span class="legend-item"><i class="legend-dot legend-stop"></i> <span data-zh="止损" data-en="Stop">止损</span> <b id="legend-stop">--</b></span>
+                        <span class="legend-item"><i class="legend-dot legend-target"></i> <span data-zh="目标" data-en="Target">目标</span> <b id="legend-target">--</b></span>
+                        <span id="chart-status" class="chart-status"></span>
+                    </div>
+                </section>
+
+                <!-- Reader Mode Controls & Floating Bar -->
+                <div class="reader-toolbar no-print" id="reader-toolbar">
+                    <div class="reader-toolbar-left">
+                        <button id="toggle-reader-mode-btn" class="reader-btn primary" type="button">
+                            <span class="btn-icon">📰</span>
+                            <span class="btn-text-lang" data-zh="社论阅读模式" data-en="Reader View">社论阅读模式</span>
+                        </button>
+                    </div>
+                    <div class="reader-toolbar-right" id="reader-settings-panel" style="display: none;">
+                        <!-- Font Size Selector -->
+                        <div class="reader-setting-group">
+                            <span class="setting-label" data-zh="字号" data-en="Size">字号</span>
+                            <button id="reader-font-dec" class="setting-btn" type="button" aria-label="Decrease Font Size">A-</button>
+                            <button id="reader-font-inc" class="setting-btn" type="button" aria-label="Increase Font Size">A+</button>
+                        </div>
+                        <!-- Font Family Selector -->
+                        <div class="reader-setting-group">
+                            <span class="setting-label" data-zh="字体" data-en="Font">字体</span>
+                            <button id="reader-font-serif" class="setting-btn active" type="button" data-zh="雅致衬线" data-en="Serif">雅致衬线</button>
+                            <button id="reader-font-sans" class="setting-btn" type="button" data-zh="现代极简" data-en="Sans">现代极简</button>
+                        </div>
+                        <!-- Theme Selector -->
+                        <div class="reader-setting-group">
+                            <span class="setting-label" data-zh="主题" data-en="Theme">主题</span>
+                            <button id="reader-theme-paper" class="setting-btn theme-dot paper active" type="button" title="Warm Paper" aria-label="Warm Paper"></button>
+                            <button id="reader-theme-white" class="setting-btn theme-dot white" type="button" title="Pure White" aria-label="Pure White"></button>
+                            <button id="reader-theme-dark" class="setting-btn theme-dot dark" type="button" title="Dark Dashboard" aria-label="Dark Dashboard"></button>
+                        </div>
+                        <!-- Speech Synthesis (TTS) Controls -->
+                        <div class="reader-setting-group tts-group">
+                            <span class="setting-label" data-zh="朗读" data-en="Read">朗读</span>
+                            <button id="tts-play-btn" class="setting-btn tts-btn" type="button" data-zh="▶ 播放" data-en="▶ Play">▶ 播放</button>
+                            <button id="tts-stop-btn" class="setting-btn tts-btn" type="button" disabled data-zh="⏹ 停止" data-en="⏹ Stop">⏹ 停止</button>
+                            <select id="tts-speed-select" class="tts-speed-select" aria-label="Voice Speed">
+                                <option value="0.8">0.8x</option>
+                                <option value="1" selected>1.0x</option>
+                                <option value="1.25">1.25x</option>
+                                <option value="1.5">1.5x</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Apple-style Waterfall Long Report Workspace -->
                 <div class="results-layout-wrapper">
@@ -217,143 +390,261 @@
                     <div class="report-flow-container">
                         
                         <!-- Technical Analysis -->
-                        <section id="sec-technical" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="技术 & 市场趋势分析报告" data-en="Technical & Market Trend Report">技术 & 市场趋势分析报告</div>
+                        <section id="sec-technical" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">01</span>
+                                    <span class="report-section-eyebrow" data-zh="技术分析" data-en="TECHNICAL ANALYSIS">技术分析</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="技术 & 市场趋势分析" data-en="Technical & Market Trend Analysis">技术 & 市场趋势分析</h3>
+                                <div class="report-section-status" id="status-technical">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
                                 <div class="markdown-content" id="report-market"><div class="empty-state">暂无数据</div></div>
                             </div>
                         </section>
 
                         <!-- Fundamentals -->
-                        <section id="sec-fundamentals" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="财务基本面及估值分析" data-en="Financial Fundamentals & Valuation">财务基本面及估值分析</div>
+                        <section id="sec-fundamentals" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">02</span>
+                                    <span class="report-section-eyebrow" data-zh="财务基本面" data-en="FUNDAMENTALS">财务基本面</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="财务基本面及估值分析" data-en="Financial Fundamentals & Valuation">财务基本面及估值分析</h3>
+                                <div class="report-section-status" id="status-fundamentals">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
                                 <div class="markdown-content" id="report-fundamentals"><div class="empty-state">暂无数据</div></div>
                             </div>
                         </section>
 
                         <!-- News -->
-                        <section id="sec-news" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="宏观消息及新闻流跟踪" data-en="Macro Events & News Catalyst Stream">宏观消息及新闻流跟踪</div>
+                        <section id="sec-news" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">03</span>
+                                    <span class="report-section-eyebrow" data-zh="宏观新闻" data-en="MACRO & NEWS">宏观新闻</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="宏观消息及新闻流跟踪" data-en="Macro Events & News Catalyst Stream">宏观消息及新闻流跟踪</h3>
+                                <div class="report-section-status" id="status-news">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
                                 <div class="markdown-content" id="report-news"><div class="empty-state">暂无数据</div></div>
                             </div>
                         </section>
 
                         <!-- Sentiment -->
-                        <section id="sec-sentiment" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="市场多空社交情绪审计" data-en="Market Social & Option Sentiment Audit">市场多空社交情绪审计</div>
+                        <section id="sec-sentiment" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">04</span>
+                                    <span class="report-section-eyebrow" data-zh="市场情绪" data-en="SENTIMENT">市场情绪</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="市场多空社交情绪审计" data-en="Market Social & Sentiment Audit">市场多空社交情绪审计</h3>
+                                <div class="report-section-status" id="status-sentiment">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
                                 <div class="markdown-content" id="report-sentiment"><div class="empty-state">暂无数据</div></div>
                             </div>
                         </section>
 
-                        <!-- Researcher Debate -->
-                        <section id="sec-debate" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="研究团队多空辩论及裁决" data-en="Research Team Bull/Bear Debate">研究团队多空辩论及裁决</div>
-                                <div class="debate-layout">
-                                    <div class="debate-columns">
-                                        <div class="debate-col bull-col glass-card">
-                                            <div class="col-header bull-header">
-                                                <span>■</span> <h4 data-zh="多方研究员辩论" data-en="Bull Researcher Thesis">多方研究员辩论</h4>
-                                            </div>
-                                            <div class="col-body markdown-content" id="debate-bull"></div>
+                        <!-- Researcher Debate — Timeline Layout -->
+                        <section id="sec-debate" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">05</span>
+                                    <span class="report-section-eyebrow" data-zh="多空辩论" data-en="BULL/BEAR DEBATE">多空辩论</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="研究团队多空辩论及裁决" data-en="Research Team Bull/Bear Debate & Verdict">研究团队多空辩论及裁决</h3>
+                                <div class="report-section-status" id="status-debate">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
+                                <!-- Debate Timeline -->
+                                <div class="debate-timeline">
+                                    <!-- Round 1 -->
+                                    <div class="debate-round">
+                                        <div class="debate-round-header">
+                                            <span class="debate-round-label">ROUND 01</span>
+                                            <div class="debate-round-divider"></div>
                                         </div>
-                                        <div class="debate-col bear-col glass-card">
-                                            <div class="col-header bear-header">
-                                                <span>■</span> <h4 data-zh="空方研究员辩论" data-en="Bear Researcher Thesis">空方研究员辩论</h4>
+                                        <div class="debate-timeline-entries">
+                                            <div class="debate-entry debate-entry--bull">
+                                                <div class="debate-entry-marker">
+                                                    <div class="debate-marker-dot bull-dot"></div>
+                                                    <div class="debate-marker-line"></div>
+                                                </div>
+                                                <div class="debate-entry-content">
+                                                    <div class="debate-entry-header">
+                                                        <span class="debate-entry-role bull-role" data-zh="多方论点" data-en="BULL CASE">多方论点</span>
+                                                        <span class="debate-entry-agent" data-zh="多方研究员" data-en="Bull Researcher">多方研究员</span>
+                                                    </div>
+                                                    <div class="markdown-content debate-content" id="debate-bull"></div>
+                                                </div>
                                             </div>
-                                            <div class="col-body markdown-content" id="debate-bear"></div>
+                                            <div class="debate-entry debate-entry--bear">
+                                                <div class="debate-entry-marker">
+                                                    <div class="debate-marker-dot bear-dot"></div>
+                                                    <div class="debate-marker-line"></div>
+                                                </div>
+                                                <div class="debate-entry-content">
+                                                    <div class="debate-entry-header">
+                                                        <span class="debate-entry-role bear-role" data-zh="空方论点" data-en="BEAR CASE">空方论点</span>
+                                                        <span class="debate-entry-agent" data-zh="空方研究员" data-en="Bear Researcher">空方研究员</span>
+                                                    </div>
+                                                    <div class="markdown-content debate-content" id="debate-bear"></div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="judge-box glass-card">
-                                        <div class="judge-title">
-                                            <span>■</span> <h4 data-zh="研究经理裁决报告" data-en="Research Manager Verdict">研究经理裁决报告</h4>
+
+                                    <!-- Verdict -->
+                                    <div class="debate-verdict">
+                                        <div class="debate-round-header">
+                                            <span class="debate-round-label verdict-label" data-zh="最终裁决" data-en="FINAL VERDICT">最终裁决</span>
+                                            <div class="debate-round-divider"></div>
                                         </div>
-                                        <div class="markdown-content" id="debate-judge-content"><div class="empty-state">暂无数据</div></div>
+                                        <div class="debate-entry debate-entry--judge">
+                                            <div class="debate-entry-marker">
+                                                <div class="debate-marker-dot judge-dot"></div>
+                                            </div>
+                                            <div class="debate-entry-content">
+                                                <div class="debate-entry-header">
+                                                    <span class="debate-entry-role judge-role" data-zh="研究经理裁决" data-en="RESEARCH MANAGER VERDICT">研究经理裁决</span>
+                                                </div>
+                                                <div class="markdown-content debate-content" id="debate-judge-content"><div class="empty-state">暂无数据</div></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </section>
 
-                        <!-- Risk Advisory -->
-                        <section id="sec-risk" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="风险防线顾问与风控签发" data-en="Risk Advisory & Portfolio Audit">风险防线顾问与风控签发</div>
-                                <div class="debate-layout">
-                                    <div class="risk-three-col">
-                                        <div class="risk-col glass-card">
-                                            <div class="col-header risk-agg-header">
-                                                <span>■</span> <h4 data-zh="进取顾问评估" data-en="Aggressive Advisor">进取顾问评估</h4>
-                                            </div>
-                                            <div class="col-body markdown-content" id="risk-aggressive"></div>
+                        <!-- Risk Advisory — Structured Risk Table -->
+                        <section id="sec-risk" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">06</span>
+                                    <span class="report-section-eyebrow" data-zh="风险审计" data-en="RISK AUDIT">风险审计</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="风险防线顾问与风控签发" data-en="Risk Advisory & Portfolio Audit">风险防线顾问与风控签发</h3>
+                                <div class="report-section-status" id="status-risk">
+                                    <span class="agent-status-dot status-pending"></span>
+                                    <span class="agent-status-label" data-zh="待运行" data-en="Pending">待运行</span>
+                                </div>
+                            </div>
+                            <div class="report-section-body">
+                                <!-- Risk Advisor Panel -->
+                                <div class="risk-advisor-grid">
+                                    <div class="risk-advisor-panel risk-panel-agg">
+                                        <div class="risk-advisor-header">
+                                            <span class="risk-advisor-dot"></span>
+                                            <span class="risk-advisor-name" data-zh="进取顾问" data-en="Aggressive">进取顾问</span>
                                         </div>
-                                        <div class="risk-col glass-card">
-                                            <div class="col-header risk-neu-header">
-                                                <span>■</span> <h4 data-zh="中性顾问评估" data-en="Neutral Advisor">中性顾问评估</h4>
-                                            </div>
-                                            <div class="col-body markdown-content" id="risk-neutral"></div>
-                                        </div>
-                                        <div class="risk-col glass-card">
-                                            <div class="col-header risk-con-header">
-                                                <span>■</span> <h4 data-zh="保守顾问评估" data-en="Conservative Advisor">保守顾问评估</h4>
-                                            </div>
-                                            <div class="col-body markdown-content" id="risk-conservative"></div>
-                                        </div>
+                                        <div class="markdown-content risk-content" id="risk-aggressive"></div>
                                     </div>
-                                    <div class="judge-box glass-card">
-                                        <div class="judge-title">
-                                            <span>■</span> <h4 data-zh="投资组合经理最终审核决策" data-en="Portfolio Manager Final Sign-Off">投资组合经理最终审核决策</h4>
+                                    <div class="risk-advisor-panel risk-panel-neu">
+                                        <div class="risk-advisor-header">
+                                            <span class="risk-advisor-dot"></span>
+                                            <span class="risk-advisor-name" data-zh="中性顾问" data-en="Neutral">中性顾问</span>
                                         </div>
-                                        <div class="markdown-content" id="risk-judge-content"><div class="empty-state">暂无数据</div></div>
-                                        <div class="markdown-content" id="final-decision-content" style="display:none;"></div>
+                                        <div class="markdown-content risk-content" id="risk-neutral"></div>
                                     </div>
+                                    <div class="risk-advisor-panel risk-panel-con">
+                                        <div class="risk-advisor-header">
+                                            <span class="risk-advisor-dot"></span>
+                                            <span class="risk-advisor-name" data-zh="保守顾问" data-en="Conservative">保守顾问</span>
+                                        </div>
+                                        <div class="markdown-content risk-content" id="risk-conservative"></div>
+                                    </div>
+                                </div>
+                                <!-- PM Final Decision -->
+                                <div class="pm-verdict">
+                                    <div class="pm-verdict-header">
+                                        <span class="pm-verdict-icon">◈</span>
+                                        <span data-zh="投资组合经理最终签发" data-en="Portfolio Manager Final Sign-Off">投资组合经理最终签发</span>
+                                    </div>
+                                    <div class="markdown-content" id="risk-judge-content"><div class="empty-state">暂无数据</div></div>
                                 </div>
                             </div>
                         </section>
 
                         <!-- Execution Plan -->
-                        <section id="sec-trader" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="交易员拟定执行细节" data-en="Trader Proposed Action Plan">交易员拟定执行细节</div>
-                                <div class="trader-section glass-card" style="border:none; padding:0; background:none;">
-                                    <div class="markdown-content" id="trader-plan-content"><div class="empty-state">暂无数据</div></div>
+                        <section id="sec-trader" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">07</span>
+                                    <span class="report-section-eyebrow" data-zh="执行方案" data-en="EXECUTION PLAN">执行方案</span>
                                 </div>
+                                <h3 class="report-section-title" data-zh="交易员拟定执行细节" data-en="Trader Proposed Action Plan">交易员拟定执行细节</h3>
+                            </div>
+                            <div class="report-section-body">
+                                <div class="markdown-content" id="trader-plan-content"><div class="empty-state">暂无数据</div></div>
                             </div>
                         </section>
 
                         <!-- Raw Full Plan -->
-                        <section id="sec-raw" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="完整原始投资计划 (LLM Draft)" data-en="Multi-Agent Detailed Researcher Plan">完整原始投资计划 (LLM Draft)</div>
+                        <section id="sec-raw" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">08</span>
+                                    <span class="report-section-eyebrow" data-zh="原始草稿" data-en="RAW DRAFT">原始草稿</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="完整原始投资计划 (LLM Draft)" data-en="Multi-Agent Detailed Researcher Plan">完整原始投资计划 (LLM Draft)</h3>
+                            </div>
+                            <div class="report-section-body">
                                 <pre class="raw-output" id="raw-markdown"></pre>
                             </div>
                         </section>
 
                         <!-- Running Logs -->
-                        <section id="sec-console" class="sec-anchor">
-                            <div class="report-box glass-card">
-                                <div class="pane-header-title" data-zh="工作站运行日志" data-en="Workstation Console Logs">工作站运行日志</div>
-                                <div class="raw-card" style="background: none; border: none; padding: 0;">
-                                    <div class="loading-console-container" style="height: 240px;">
-                                        <div class="console-header">
-                                            <span class="console-dot red"></span>
-                                            <span class="console-dot yellow"></span>
-                                            <span class="console-dot green"></span>
-                                            <span class="console-title">Agent Stream Log</span>
-                                        </div>
-                                        <div id="results-console" class="loading-console">
-                                            <div class="console-line">[SYSTEM] Workstation loaded. Ready.</div>
-                                        </div>
+                        <section id="sec-console" class="sec-anchor report-section">
+                            <div class="report-section-header">
+                                <div class="report-section-meta">
+                                    <span class="report-section-num">09</span>
+                                    <span class="report-section-eyebrow" data-zh="运行日志" data-en="CONSOLE">运行日志</span>
+                                </div>
+                                <h3 class="report-section-title" data-zh="工作站运行日志" data-en="Workstation Console Logs">工作站运行日志</h3>
+                            </div>
+                            <div class="report-section-body">
+                                <div class="loading-console-container" style="height: 240px;">
+                                    <div class="console-header">
+                                        <span class="console-dot red"></span>
+                                        <span class="console-dot yellow"></span>
+                                        <span class="console-dot green"></span>
+                                        <span class="console-title">Agent Stream Log</span>
+                                    </div>
+                                    <div id="results-console" class="loading-console">
+                                        <div class="console-line">[SYSTEM] Workstation loaded. Ready.</div>
                                     </div>
                                 </div>
                             </div>
                         </section>
                     </div>
 
-                    <!-- Right Column: Sticky Table of Contents (TOC) -->
-                    <aside class="toc-sidebar">
+                    <!-- Report navigation (TOC). Desktop: draggable floating panel;
+                         mobile: bottom sheet + floating pill. See initReportNav(). -->
+                    <aside class="toc-sidebar" id="toc-sidebar">
+                        <div class="toc-drag-handle" id="toc-drag-handle">
+                            <span class="toc-title" data-zh="报告导航" data-en="CONTENTS">报告导航</span>
+                            <button class="toc-collapse-btn" id="toc-collapse-btn" type="button" aria-label="Collapse">−</button>
+                        </div>
+                        <div class="toc-body" id="toc-body">
                         <!-- Decision Snapshot (populated by displayResults) -->
                         <div class="toc-summary" id="toc-summary" aria-hidden="true">
                             <div class="ts-row ts-headline">
@@ -381,26 +672,114 @@
                                 <span id="ts-conflict-text"></span>
                             </div>
                         </div>
-                        <div class="toc-title" data-zh="报告导航" data-en="CONTENTS">报告导航</div>
                         <nav class="toc-nav">
-                            <a href="#sec-technical" class="toc-link active" data-zh="■ 技术分析" data-en="■ Technical">■ 技术分析</a>
-                            <a href="#sec-fundamentals" class="toc-link" data-zh="■ 财务估值" data-en="■ Fundamentals">■ 财务估值</a>
-                            <a href="#sec-news" class="toc-link" data-zh="■ 宏观新闻" data-en="■ Macro & News">■ 宏观新闻</a>
-                            <a href="#sec-sentiment" class="toc-link" data-zh="■ 市场情绪" data-en="■ Sentiment">■ 市场情绪</a>
-                            <a href="#sec-debate" class="toc-link" data-zh="■ 多空辩论" data-en="■ Thesis Debate">■ 多空辩论</a>
-                            <a href="#sec-risk" class="toc-link" data-zh="■ 风险控制" data-en="■ Risk Audit">■ 风险控制</a>
-                            <a href="#sec-trader" class="toc-link" data-zh="■ 交易方案" data-en="■ Execution">■ 交易方案</a>
-                            <a href="#sec-raw" class="toc-link" data-zh="■ 原始计划" data-en="■ Raw Draft">■ 原始计划</a>
-                            <a href="#sec-console" class="toc-link" data-zh="■ 运行日志" data-en="■ Console Logs">■ 运行日志</a>
+                            <a href="#sec-technical" class="toc-link active" data-section="sec-technical">
+                                <span class="toc-num">01</span>
+                                <span class="toc-name" data-zh="技术分析" data-en="Technical">技术分析</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-technical"></span>
+                            </a>
+                            <a href="#sec-fundamentals" class="toc-link" data-section="sec-fundamentals">
+                                <span class="toc-num">02</span>
+                                <span class="toc-name" data-zh="财务估值" data-en="Fundamentals">财务估值</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-fundamentals"></span>
+                            </a>
+                            <a href="#sec-news" class="toc-link" data-section="sec-news">
+                                <span class="toc-num">03</span>
+                                <span class="toc-name" data-zh="宏观新闻" data-en="Macro & News">宏观新闻</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-news"></span>
+                            </a>
+                            <a href="#sec-sentiment" class="toc-link" data-section="sec-sentiment">
+                                <span class="toc-num">04</span>
+                                <span class="toc-name" data-zh="市场情绪" data-en="Sentiment">市场情绪</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-sentiment"></span>
+                            </a>
+                            <a href="#sec-debate" class="toc-link" data-section="sec-debate">
+                                <span class="toc-num">05</span>
+                                <span class="toc-name" data-zh="多空辩论" data-en="Debate">多空辩论</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-debate"></span>
+                            </a>
+                            <a href="#sec-risk" class="toc-link" data-section="sec-risk">
+                                <span class="toc-num">06</span>
+                                <span class="toc-name" data-zh="风险控制" data-en="Risk Audit">风险控制</span>
+                                <span class="toc-status-dot status-pending" id="toc-dot-risk"></span>
+                            </a>
+                            <a href="#sec-trader" class="toc-link" data-section="sec-trader">
+                                <span class="toc-num">07</span>
+                                <span class="toc-name" data-zh="交易方案" data-en="Execution">交易方案</span>
+                            </a>
+                            <a href="#sec-raw" class="toc-link" data-section="sec-raw">
+                                <span class="toc-num">08</span>
+                                <span class="toc-name" data-zh="原始计划" data-en="Raw Draft">原始计划</span>
+                            </a>
+                            <a href="#sec-console" class="toc-link" data-section="sec-console">
+                                <span class="toc-num">09</span>
+                                <span class="toc-name" data-zh="运行日志" data-en="Console">运行日志</span>
+                            </a>
                             <button id="export-pdf-btn" class="export-pdf-btn" type="button" disabled style="width: 100%; text-align: left; padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border-color);">
                                 <span>■</span> <span data-zh="导出 PDF 报告" data-en="Export PDF Report">导出 PDF 报告</span>
                             </button>
                         </nav>
+                        </div>
                     </aside>
                 </div>
             </div>
         </main>
     </div>
+
+    <!-- ==================================================================
+         Disclaimer modal — shown once per browser session (localStorage
+         key `tradingagents.disclaimerAckedAt`). Blocks all interaction
+         until "同意并继续" is clicked.
+         ================================================================== -->
+    <div id="disclaimer-modal" class="disclaimer-modal" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title" hidden>
+        <div class="disclaimer-card">
+            <div class="disclaimer-header">
+                <span class="disclaimer-icon">⚠️</span>
+                <h2 id="disclaimer-title" data-zh="使用免责声明" data-en="Terms & Disclaimer">使用免责声明</h2>
+            </div>
+
+            <div class="disclaimer-body">
+                <div class="disclaimer-zh" data-zh-visible>
+                    <p><strong>本平台仅供学习、研究与信息展示之用，不构成任何投资建议、要约或招揽。</strong></p>
+                    <ol>
+                        <li><strong>非投资建议</strong>：本系统所展示的评级、买入 / 卖出 / 持有决策、目标价、止损位、风险回报比及所有分析文字，均由大语言模型（LLM）与自动化数据流生成，可能存在错误、遗漏或滞后，<em>不应作为您做出实际交易决定的唯一依据</em>。</li>
+                        <li><strong>数据来源风险</strong>：行情、财务、新闻、社交情绪等原始数据来自第三方公开接口，其准确性、完整性与及时性由原始提供方负责，本平台不作担保。</li>
+                        <li><strong>市场风险</strong>：股票、基金、ETF、加密货币及衍生品交易存在本金亏损风险，历史表现不代表未来收益。您需自行评估自身风险承受能力，并在必要时咨询有资质的持牌投资顾问、注册会计师或税务顾问。</li>
+                        <li><strong>责任限制</strong>：在法律允许的最大范围内，本平台及其开发者、贡献者、运营方对因使用或无法使用本系统而产生的任何直接、间接、附带、特殊或后果性损失概不负责。</li>
+                        <li><strong>合规提示</strong>：请遵守您所在司法管辖区的相关证券、税务与数据合规法规。若您受限于所在地区禁止访问某类金融信息或工具，请立即停止使用。</li>
+                    </ol>
+                    <p class="disclaimer-note">点击"同意并继续"，即视为您已阅读、理解并接受本免责声明的全部条款。</p>
+                </div>
+
+                <div class="disclaimer-en" data-en-visible hidden>
+                    <p><strong>This platform is provided for educational, research and informational purposes only. It does NOT constitute investment advice, an offer, or a solicitation.</strong></p>
+                    <ol>
+                        <li><strong>Not investment advice</strong>: All ratings, buy / sell / hold decisions, price targets, stop losses, risk-reward ratios, and analytical text shown here are produced by large language models (LLMs) and automated data pipelines. They may contain errors, omissions or delays and <em>must not be relied upon as the sole basis for any trading decision</em>.</li>
+                        <li><strong>Third-party data</strong>: Market quotes, financials, news, and social sentiment are pulled from public third-party endpoints. Their accuracy, completeness and timeliness are the responsibility of the original providers, and this platform makes no warranty.</li>
+                        <li><strong>Market risk</strong>: Trading equities, funds, ETFs, crypto, and derivatives carries the risk of capital loss. Past performance is not indicative of future results. Assess your own risk tolerance and consult a licensed investment advisor, accountant or tax professional as needed.</li>
+                        <li><strong>Limitation of liability</strong>: To the maximum extent permitted by law, this platform, its developers, contributors and operators disclaim any liability for direct, indirect, incidental, special or consequential damages arising from use of, or inability to use, this system.</li>
+                        <li><strong>Compliance</strong>: You are responsible for complying with the securities, tax and data laws of your jurisdiction. If financial tools of this kind are restricted where you are, discontinue use immediately.</li>
+                    </ol>
+                    <p class="disclaimer-note">By clicking "I Agree & Continue", you acknowledge that you have read, understood and accepted the terms above.</p>
+                </div>
+            </div>
+
+            <label class="disclaimer-check">
+                <input type="checkbox" id="disclaimer-ack">
+                <span data-zh="我已阅读并同意上述条款" data-en="I have read and agree to the terms above">我已阅读并同意上述条款</span>
+            </label>
+
+            <div class="disclaimer-actions">
+                <button id="disclaimer-decline" type="button" class="disclaimer-btn secondary">
+                    <span data-zh="不同意（退出）" data-en="Decline (leave)">不同意（退出）</span>
+                </button>
+                <button id="disclaimer-accept" type="button" class="disclaimer-btn primary" disabled>
+                    <span data-zh="同意并继续" data-en="I Agree & Continue">同意并继续</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
