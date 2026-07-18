@@ -1641,6 +1641,7 @@ document.addEventListener("DOMContentLoaded", () => {
         function applySettings() {
             // Apply reader mode class
             resultsView.classList.toggle("editorial-reader-mode", readerActive);
+            document.body.classList.toggle("reader-mode-active", readerActive);
             settingsPanel.style.display = readerActive ? "flex" : "none";
 
             // Update toggle button text based on state and current language

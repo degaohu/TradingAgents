@@ -4052,3 +4052,9 @@ body.theme-light .persistence-notice {
 body.theme-light .persistence-notice .notice-text {
     color: #1f2937;
 }
+
+/* Hide sidebar and toggle buttons completely when Reader Mode is active (for distraction-free reading on both Mobile and Desktop) */
+body.reader-mode-active .sidebar-config,
+body.reader-mode-active #sidebar-toggle-btn {
+    display: none !important;
+}
