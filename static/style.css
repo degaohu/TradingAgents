@@ -1079,25 +1079,31 @@ body {
    (persisted to localStorage). The ≤1024px media query restyles the same
    element into a bottom sheet. */
 .toc-sidebar {
-    position: fixed;
-    top: 100px;
-    right: 24px;
-    width: 210px;
-    max-height: calc(100vh - 140px);
     z-index: 150;
     display: flex;
     flex-direction: column;
     background: var(--bg-layer);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
     overflow: hidden;
     opacity: 0.65;
     transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .toc-sidebar:hover {
     opacity: 1.0;
-    box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+}
+
+@media (min-width: 1025px) {
+    .toc-sidebar {
+        position: sticky;
+        top: 24px;
+        width: 250px;
+        max-height: calc(100vh - 48px);
+        flex-shrink: 0;
+    }
+    .toc-sidebar:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
 }
 .toc-header {
     flex-shrink: 0;
@@ -1880,6 +1886,7 @@ body {
        inline left/top the desktop drag may have set are overridden with
        !important here. See initReportNav() in app.js. */
     .toc-sidebar {
+        position: fixed;
         left: 0 !important;
         right: 0 !important;
         top: auto !important;
@@ -3592,6 +3599,15 @@ body.theme-light .theme-icon-indicator {
     height: 100px;
     cursor: pointer;
     user-select: none;
+}
+
+@media (min-width: 1025px) {
+    .pull-chain-wrapper {
+        position: fixed;
+        top: 0;
+        right: 40px;
+        z-index: 200;
+    }
 }
 
 .pull-chain-string {
