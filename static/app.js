@@ -1079,6 +1079,24 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof window.__taCalculateReadingTime === "function") {
             window.__taCalculateReadingTime();
         }
+
+        // Populate the TOC sub-headings from what we just rendered, and
+        // annotate each section with a Bull/Bear/Neutral sentiment icon
+        // derived from the section's own text.
+        //
+        // Sentiments only look at the payload, so they can be applied
+        // immediately. Sub-headings need the freshly-inserted markdown
+        // to already be in the DOM — deferred one frame.
+        if (typeof window.__taApplyTocSentiments === "function") {
+            try { window.__taApplyTocSentiments(data); }
+            catch (e) { console.warn("apply toc sentiments failed", e); }
+        }
+        setTimeout(() => {
+            if (typeof window.__taBuildAllTocSublinks === "function") {
+                try { window.__taBuildAllTocSublinks(); }
+                catch (e) { console.warn("build toc sublinks failed", e); }
+            }
+        }, 60);
     }
 
     /**
@@ -1996,6 +2014,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Calculate time on first load if results exist
         setTimeout(calculateReadingTime, 1000);
+
+        // --- Hide/Show Toolbar on Scroll ---
+        let lastScrollTop = 0;
+        const toolbar = document.getElementById("reader-toolbar");
+        
+        resultsView.addEventListener("scroll", () => {
+            if (!resultsView.classList.contains("editorial-reader-mode")) return;
+            // Skip hiding on mobile devices where toolbar is static
+            if (window.innerWidth <= 768) return;
+            
+            const st = resultsView.scrollTop;
+            if (st > lastScrollTop && st > 80) {
+                // Scroll down: slide out of view
+                toolbar.style.transform = "translate3d(-50%, -80px, 0)";
+                toolbar.style.opacity = "0";
+                toolbar.style.pointerEvents = "none";
+            } else {
+                // Scroll up: restore into view
+                toolbar.style.transform = "translate3d(-50%, 0, 0)";
+                toolbar.style.opacity = "1";
+                toolbar.style.pointerEvents = "auto";
+            }
+            lastScrollTop = st <= 0 ? 0 : st;
+        }, { passive: true });
     })();
 });
 
@@ -2510,6 +2552,28 @@ function initTOCScroller() {
             link.classList.toggle("active", isActive);
         });
 
+        // Show sub-headings only for the currently-visible section; hide the
+        // rest so the TOC stays a single-focus outline.
+        document.querySelectorAll(".toc-sublinks").forEach(ul => {
+            const isActive = ul.dataset.sublinksFor === activeId;
+            ul.classList.toggle("open", isActive);
+        });
+
+        // Which sub-heading is currently in view? Highlight it inside the
+        // open sublinks list.
+        const openList = document.querySelector(`.toc-sublinks[data-sublinks-for="${activeId}"].open`);
+        if (openList) {
+            const subScrollPos = scroller.scrollTop + 100;
+            const anchors = openList.querySelectorAll(".toc-sublink");
+            let currentIdx = -1;
+            anchors.forEach((a, i) => {
+                const targetId = a.getAttribute("data-target");
+                const t = targetId ? document.getElementById(targetId) : null;
+                if (t && subScrollPos >= t.offsetTop) currentIdx = i;
+            });
+            anchors.forEach((a, i) => a.classList.toggle("current", i === currentIdx));
+        }
+
         // Let the mobile report-nav pill reflect where the reader is now
         // (the "定位" — always-visible current-section indicator).
         if (typeof window.__taOnSectionChange === "function") {
@@ -2538,7 +2602,129 @@ function initTOCScroller() {
             }
         });
     });
+
+    // Sub-links delegate: any dynamically added .toc-sublink jumps to its
+    // heading element on the report scroller.
+    document.addEventListener("click", e => {
+        const sub = e.target.closest(".toc-sublink");
+        if (!sub) return;
+        e.preventDefault();
+        const targetId = sub.getAttribute("data-target");
+        const t = targetId ? document.getElementById(targetId) : null;
+        if (t) scroller.scrollTo({ top: t.offsetTop - 12, behavior: "smooth" });
+    });
 }
+
+// Populate the per-section sub-headings list under each toc-link by
+// scanning the section for headings (h2 through h4). Called from
+// displayResults() once every report body has been rendered.
+window.__taBuildAllTocSublinks = function() {
+    const sublinkContainers = document.querySelectorAll(".toc-sublinks");
+    sublinkContainers.forEach(ul => {
+        const sectionId = ul.dataset.sublinksFor;
+        const section = document.getElementById(sectionId);
+        ul.innerHTML = "";
+        if (!section) return;
+
+        // Only pick up headings that live inside the section body / cards
+        // to avoid grabbing the outer section title itself.
+        const headings = section.querySelectorAll(
+            ".markdown-content h1, .markdown-content h2, .markdown-content h3, " +
+            ".card-body h2, .card-body h3, " +
+            ".report-section-body h2, .report-section-body h3"
+        );
+        const inner = document.createElement("div");
+        inner.className = "toc-sublinks-inner";
+        headings.forEach((h, i) => {
+            // Skip headings that are inside a table (they're column labels,
+            // not real section breaks) or that are effectively empty.
+            const text = (h.textContent || "").trim();
+            if (!text || h.closest("table")) return;
+
+            // Ensure the heading has an id we can target.
+            if (!h.id) h.id = `${sectionId}-sub-${i}`;
+
+            const a = document.createElement("a");
+            a.className = "toc-sublink";
+            a.href = `#${h.id}`;
+            a.setAttribute("data-target", h.id);
+            const marker = h.tagName === "H1" || h.tagName === "H2" ? "▸" : "·";
+            a.innerHTML = `<span class="toc-sublink-marker">${marker}</span><span>${text.length > 40 ? text.slice(0, 40) + "…" : text}</span>`;
+            inner.appendChild(a);
+        });
+        ul.appendChild(inner);
+    });
+    // Immediately re-run sync so the currently-active section's list opens.
+    if (typeof window.__taSyncActiveSection === "function") window.__taSyncActiveSection();
+};
+
+// Analyse a chunk of report text and classify overall sentiment. Kept
+// deliberately keyword-based (no LLM round trip) — the goal is a stable,
+// fast icon hint, not a full re-analysis.
+function detectSentiment(text) {
+    if (!text || typeof text !== "string") return null;
+    const t = text.toLowerCase();
+    // Weight keywords with a rough magnitude. CJK and English mixed since
+    // reports come in either language.
+    const BULL = [
+        ["buy", 3], ["strong buy", 4], ["bullish", 3], ["long", 2], ["outperform", 3],
+        ["overweight", 3], ["upside", 2], ["accumulate", 2], ["upgrade", 2], ["breakout", 2],
+        ["买入", 4], ["看多", 3], ["做多", 3], ["增持", 3], ["超配", 3], ["突破", 2], ["上涨", 2],
+        ["利好", 2], ["强势", 2], ["积极", 2],
+    ];
+    const BEAR = [
+        ["sell", 3], ["strong sell", 4], ["bearish", 3], ["short", 2], ["underperform", 3],
+        ["underweight", 3], ["downside", 2], ["downgrade", 2], ["cut", 1], ["breakdown", 2],
+        ["卖出", 4], ["看空", 3], ["做空", 3], ["减持", 3], ["低配", 3], ["下跌", 2], ["利空", 2],
+        ["承压", 2], ["疲软", 2], ["消极", 2], ["风险", 1],
+    ];
+    const NEUTRAL = [
+        ["hold", 3], ["neutral", 3], ["sideways", 2], ["range-bound", 2],
+        ["持有", 3], ["中性", 3], ["观望", 2], ["震荡", 2],
+    ];
+    const score = kws => kws.reduce((s, [k, w]) => s + (t.includes(k) ? w * ((t.match(new RegExp(k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), "g")) || []).length) : 0), 0);
+    const bull = score(BULL);
+    const bear = score(BEAR);
+    const neutral = score(NEUTRAL);
+    if (bull === 0 && bear === 0 && neutral === 0) return null;
+    // Require a clear margin to call bull/bear — else neutral.
+    if (bull >= bear + 3 && bull >= neutral) return "bull";
+    if (bear >= bull + 3 && bear >= neutral) return "bear";
+    return "neutral";
+}
+
+// Apply a sentiment icon to one TOC entry.
+window.__taSetTocSentiment = function(sectionId, mood) {
+    const el = document.querySelector(`.toc-sentiment[data-sentiment-for="${sectionId}"]`);
+    if (!el) return;
+    el.classList.remove("bull", "bear", "neutral", "visible");
+    if (!mood) return;
+    el.classList.add(mood, "visible");
+    const glyph = mood === "bull" ? "▲" : mood === "bear" ? "▼" : "◆";
+    const title = mood === "bull" ? (currentLang === "zh" ? "看多" : "Bull")
+                : mood === "bear" ? (currentLang === "zh" ? "看空" : "Bear")
+                :                    (currentLang === "zh" ? "中性" : "Neutral");
+    el.textContent = glyph;
+    el.title = title;
+};
+
+// Populate the entire TOC's sentiment icons from a fresh result payload.
+window.__taApplyTocSentiments = function(data) {
+    if (!data) return;
+    const map = {
+        "sec-technical":    data.market_report,
+        "sec-fundamentals": data.fundamentals_report,
+        "sec-news":         data.news_report,
+        "sec-sentiment":    data.sentiment_report,
+        "sec-debate":       ((data.investment_debate_state || {}).judge_decision) || "",
+        "sec-risk":         ((data.risk_debate_state || {}).judge_decision) || "",
+        "sec-trader":       data.trader_investment_plan,
+    };
+    Object.entries(map).forEach(([id, text]) => {
+        const mood = detectSentiment(text);
+        window.__taSetTocSentiment(id, mood);
+    });
+};
 
 // ── Report navigation ────────────────────────────────────────────────
 (function initReportNav() {
@@ -2579,11 +2765,13 @@ function initTOCScroller() {
         panel.classList.remove('collapsed');
         panel.classList.add('sheet-open');
         backdrop.classList.add('visible');
+        document.body.classList.add('toc-sheet-open');
         updateFabVisibility();
     }
     function closeSheet() {
         panel.classList.remove('sheet-open');
         backdrop.classList.remove('visible');
+        document.body.classList.remove('toc-sheet-open');
         updateFabVisibility();
     }
 
