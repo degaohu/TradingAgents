@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.4] — 2026-07-18
+
+Polishing release: resolved mobile TOC drawer interaction bugs, added a scroll-to-center animation with flash highlight for clicked sections/subsections, and fixed the non-functional drawer close button.
+
+### Fixed
+
+- **Mobile Drawer Close Button.** Styled and wired the `[x]` close button in the mobile drawer header to dismiss the TOC drawer properly.
+- **Auto-dismiss on Subsection Click.** Clicking subheadings within the mobile TOC now successfully closes the drawer along with standard top-level section clicks.
+- **Scroll & Flash Highlight.** Clicking any TOC link now initiates a smooth scroll that centers the targeted heading/section inside the scroller view, and triggers a brief pulse-glow background highlight (flash) to direct the reader's eye.
+
 ## [0.4.3] — 2026-07-18
 
 Feature release: added a sidebar entry point for Reader Mode, implemented backend SMTP email report delivery with rich HTML formatting, and enabled AI-polishing and PDF exports for historical report runs.

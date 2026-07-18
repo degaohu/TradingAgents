@@ -1920,6 +1920,18 @@ body {
         font-size: 18px;
         align-items: center;
         justify-content: center;
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: none !important;
+        color: var(--text-muted) !important;
+        border-radius: 50% !important;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .toc-collapse-btn:hover, .toc-collapse-btn:active {
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: #fff !important;
     }
     .toc-body {
         padding: 12px 18px 20px;
@@ -4057,4 +4069,32 @@ body.reader-mode-active #config-form,
 body.reader-mode-active .sidebar-config,
 body.reader-mode-active #sidebar-toggle-btn {
     display: none !important;
+}
+
+/* --- Smooth Scrolling Section/Heading Flash Highlight --- */
+@keyframes flash-highlight {
+    0% {
+        background-color: rgba(255, 45, 85, 0.22);
+        box-shadow: 0 0 15px rgba(255, 45, 85, 0.4);
+    }
+    50% {
+        background-color: rgba(255, 45, 85, 0.12);
+        box-shadow: 0 0 10px rgba(255, 45, 85, 0.2);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+.heading-highlighted {
+    animation: flash-highlight 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    padding: 2px 6px;
+    margin-left: -6px;
+    margin-right: -6px;
+    border-radius: 4px;
+    display: inline-block;
+}
+.section-highlighted {
+    animation: flash-highlight 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    border-radius: 8px;
 }

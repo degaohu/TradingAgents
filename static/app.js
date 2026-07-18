@@ -2892,12 +2892,44 @@ window.__taApplyTocSentiments = function(data) {
 
     fab.addEventListener('click', openSheet);
     backdrop.addEventListener('click', closeSheet);
+
+    const toggleBtn = document.getElementById('toc-collapse-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', closeSheet);
+    }
     
-    // Tapping any nav link closes the sheet
+    // Tapping any nav link closes the sheet, scrolls smoothly, and triggers a highlight flash
     const navEl = panel.querySelector('.toc-nav');
     if (navEl) {
         navEl.addEventListener('click', (e) => {
-            if (isMobile() && e.target.closest('.toc-link')) closeSheet();
+            const link = e.target.closest('.toc-link') || e.target.closest('.toc-sublink');
+            if (!link) return;
+
+            e.preventDefault();
+
+            if (isMobile()) {
+                closeSheet();
+            }
+
+            const targetId = link.getAttribute('href').substring(1);
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) {
+                // Scroll smoothly to center the element in view
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                // Highlight the target element
+                document.querySelectorAll('.heading-highlighted, .section-highlighted').forEach(el => {
+                    el.classList.remove('heading-highlighted', 'section-highlighted');
+                });
+
+                const isHeading = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(targetEl.tagName);
+                const highlightClass = isHeading ? 'heading-highlighted' : 'section-highlighted';
+                targetEl.classList.add(highlightClass);
+
+                setTimeout(() => {
+                    targetEl.classList.remove(highlightClass);
+                }, 1600);
+            }
         });
     }
 
