@@ -1627,6 +1627,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Update toggle button text based on state and current language
             const btnTextEl = toggleBtn.querySelector(".btn-text-lang");
+            const btnIconEl = toggleBtn.querySelector(".btn-icon");
+            if (btnIconEl) {
+                btnIconEl.textContent = readerActive ? "←" : "📰";
+            }
             if (btnTextEl) {
                 if (readerActive) {
                     btnTextEl.setAttribute("data-zh", "返回仪表盘模式");
