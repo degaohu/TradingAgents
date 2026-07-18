@@ -2953,7 +2953,7 @@ function renderConfidence(confidence) {
 }
 
 // ---- Price chart (Lightweight Charts) --------------------------------
-let _chartApi = null, _chartSeries = null, _chartCtx = null;
+let _chartApi = null, _chartSeries = null, _chartCtx = null, _lastCandles = null;
 function renderPriceChart(ctx) {
     _chartCtx = ctx;
     const panel = document.getElementById("chart-panel");
@@ -2984,8 +2984,10 @@ async function _loadChart(range) {
         if (data.status !== "success" || !data.candles || data.candles.length === 0) {
             status.textContent = currentLang === 'zh' ? `无 ${_chartCtx.ticker} 行情数据` : `No price data for ${_chartCtx.ticker}`;
             container.innerHTML = "";
+            _lastCandles = null;
             return;
         }
+        _lastCandles = data.candles;
         _drawChart(container, data.candles);
         status.textContent = `${data.candles.length} bars · ${range}`;
     } catch (e) {
@@ -3081,15 +3083,50 @@ function applyTheme(name) {
     document.querySelectorAll('[data-theme]').forEach(b => {
         b.setAttribute("aria-current", b.dataset.theme === name ? "true" : "false");
     });
+
+    // Update custom header settings panel theme indicator icons
+    const darkIcon = document.getElementById("theme-dark-icon");
+    const lightIcon = document.getElementById("theme-light-icon");
+    if (darkIcon && lightIcon) {
+        darkIcon.classList.toggle("active", name === "dark");
+        lightIcon.classList.toggle("active", name === "light");
+    }
+
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", name === "light" ? "#f5f7fa" : "#080A0C");
-    // Redraw chart to pick up new colors.
-    if (_chartCtx) renderPriceChart(_chartCtx);
+    // If a chart is currently on-screen, redraw it in the new theme.
+    // We only need to re-hit the API if _lastCandles is unavailable — the
+    // cached candles from the last successful load let us reskin instantly.
+    if (_chartCtx && _lastCandles) {
+        const container = document.getElementById("chart-container");
+        if (container) _drawChart(container, _lastCandles);
+    }
     localStorage.setItem(THEME_KEY, name);
 }
 document.addEventListener("click", (e) => {
     const b = e.target.closest("[data-theme]");
     if (b) applyTheme(b.dataset.theme);
+});
+
+// Bind pull-chain interaction
+document.addEventListener("DOMContentLoaded", () => {
+    const pullChain = document.getElementById("theme-pull-chain");
+    if (pullChain) {
+        pullChain.addEventListener("click", () => {
+            // Prevent double triggers during animation
+            if (pullChain.classList.contains("animating")) return;
+
+            pullChain.classList.add("animating");
+            setTimeout(() => {
+                pullChain.classList.remove("animating");
+            }, 600);
+
+            // Play light switch click sound context or simply flip theme
+            const currentTheme = localStorage.getItem("tradingagents.theme") || "dark";
+            const nextTheme = currentTheme === "dark" ? "light" : "dark";
+            applyTheme(nextTheme);
+        });
+    }
 });
 
 // ---- Desktop notifications ------------------------------------------

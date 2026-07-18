@@ -130,10 +130,8 @@ body {
     padding: 16px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    row-gap: 8px;
-    gap: 8px;
+    flex-direction: column;
+    gap: 14px;
 }
 .sidebar-header .logo-icon,
 .sidebar-header .logo-text { flex-shrink: 0; }
@@ -3444,3 +3442,223 @@ body.theme-light .rc-btn[aria-current="true"] { background: rgba(255,45,85,0.12)
 .hist-star.on { color: #fcd34d; text-shadow: 0 0 6px rgba(252,211,77,0.4); }
 .hist-star:hover { color: #fcd34d; }
 .hist-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+
+/* ==================================================================
+   Settings Panel Grid, Segmented Control & Pull-Chain Animation
+   ================================================================== */
+.header-logo-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.logo-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidebar-settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.settings-row {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.settings-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+.segmented-control {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+    width: 100%;
+}
+
+body.theme-light .segmented-control {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.segmented-control .rc-btn {
+    text-align: center;
+    padding: 6px 2px;
+    font-size: 10.5px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    width: 100%;
+    color: var(--text-secondary);
+}
+
+.segmented-control .rc-btn:hover {
+    color: var(--text-primary);
+}
+
+.segmented-control .rc-btn[aria-current="true"] {
+    background: var(--bg-layer, #141A21) !important;
+    color: var(--accent-pink, #ff2d55) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+body.theme-light .segmented-control .rc-btn[aria-current="true"] {
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Theme control row with pull chain */
+.theme-control-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.theme-icon-indicator {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 4px 10px;
+    gap: 10px;
+}
+
+body.theme-light .theme-icon-indicator {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.theme-icon-span {
+    font-size: 12px;
+    opacity: 0.25;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.theme-icon-span.active {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+/* Pull Chain styling */
+.pull-chain-wrapper {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    width: 32px;
+    height: 48px;
+    margin-left: 20px;
+    user-select: none;
+}
+
+.pull-chain-string {
+    position: absolute;
+    top: -12px;
+    left: 15px;
+    width: 1.5px;
+    height: 32px;
+    background: linear-gradient(to bottom, #888, #555);
+    transform-origin: top center;
+}
+
+.pull-chain-ring {
+    position: absolute;
+    top: 18px;
+    left: 8px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2.5px solid #888;
+    background: transparent;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+body.theme-light .pull-chain-ring {
+    border-color: #555;
+}
+
+/* Day/Night pull animations */
+@keyframes pull-snap-back-ring {
+    0% { transform: translateY(0); }
+    30% { transform: translateY(14px); }
+    55% { transform: translateY(-4px); }
+    75% { transform: translateY(2px); }
+    90% { transform: translateY(-1px); }
+    100% { transform: translateY(0); }
+}
+
+@keyframes pull-snap-back-string {
+    0% { height: 32px; }
+    30% { height: 46px; }
+    55% { height: 28px; }
+    75% { height: 34px; }
+    90% { height: 31px; }
+    100% { height: 32px; }
+}
+
+.pull-chain-wrapper.animating .pull-chain-ring {
+    animation: pull-snap-back-ring 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.pull-chain-wrapper.animating .pull-chain-string {
+    animation: pull-snap-back-string 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Desktop notifications toggle button */
+.rc-btn.notif-btn {
+    border: 1px solid var(--border-color);
+    background: transparent;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-left: auto;
+    transition: background var(--od-duration-normal) var(--od-ease-out), color var(--od-duration-normal) var(--od-ease-out);
+}
+
+.rc-btn.notif-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+body.theme-light .rc-btn.notif-btn:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* 渐变变天亮/天黑过渡 */
+body, 
+.sidebar-config, 
+.loading-console, 
+.kpi-tile, 
+#results-view, 
+.results-layout-wrapper,
+.decision-card,
+.toc-sidebar,
+.lang-btn,
+.rc-btn,
+.segmented-control,
+.theme-icon-indicator {
+    transition: background-color 0.8s cubic-bezier(0.25, 1, 0.5, 1), 
+                color 0.8s cubic-bezier(0.25, 1, 0.5, 1), 
+                border-color 0.8s cubic-bezier(0.25, 1, 0.5, 1),
+                box-shadow 0.8s cubic-bezier(0.25, 1, 0.5, 1),
+                border-right-color 0.8s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}

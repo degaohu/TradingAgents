@@ -20,30 +20,64 @@
         <!-- Sidebar Workspace (Config + History) -->
         <aside class="sidebar-config">
             <div class="sidebar-header">
-                <span class="logo-icon">■</span>
-                <h1 class="logo-text">TRADING AGENTS</h1>
-                <div class="lang-selector">
-                    <button id="lang-btn-zh" class="lang-btn active" onclick="setLang('zh')">中文</button>
-                    <span class="lang-divider">|</span>
-                    <button id="lang-btn-en" class="lang-btn" onclick="setLang('en')">EN</button>
+                <div class="header-logo-row">
+                    <div class="logo-wrapper">
+                        <span class="logo-icon">■</span>
+                        <h1 class="logo-text">TRADING AGENTS</h1>
+                    </div>
+                    <div class="lang-selector">
+                        <button id="lang-btn-zh" class="lang-btn active" onclick="setLang('zh')">中文</button>
+                        <span class="lang-divider">|</span>
+                        <button id="lang-btn-en" class="lang-btn" onclick="setLang('en')">EN</button>
+                    </div>
                 </div>
-                <div class="reading-controls" title="调节报告字号 / Adjust font size">
-                    <button class="rc-btn" data-scale="0.9">A−</button>
-                    <button class="rc-btn" data-scale="1" aria-current="true">A</button>
-                    <button class="rc-btn" data-scale="1.15">A+</button>
-                    <button class="rc-btn" data-scale="1.3">A++</button>
-                </div>
-                <div class="theme-controls" title="配色主题 / Color theme" style="margin-top:6px;width:100%;display:flex;align-items:center;gap:4px">
-                    <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-right:4px" data-zh="主题" data-en="THEME">主题</span>
-                    <button id="theme-btn-dark"  class="rc-btn" data-theme="dark"  aria-current="true">🌙</button>
-                    <button id="theme-btn-light" class="rc-btn" data-theme="light">☀️</button>
-                    <button id="notif-toggle-btn" class="rc-btn" title="桌面通知 / Desktop notifications" style="margin-left:auto">🔔</button>
-                </div>
-                <div class="screen-controls" title="屏幕模式 / Screen Mode" style="margin-top: 6px; width: 100%; display: flex; align-items: center; gap: 4px;">
-                    <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-right: 4px;" data-zh="屏幕" data-en="SCREEN">屏幕</span>
-                    <button id="screen-btn-default" class="rc-btn" data-mode="default" aria-current="true" data-zh="默认" data-en="Default">默认</button>
-                    <button id="screen-btn-flat" class="rc-btn" data-mode="flat-led" data-zh="平面LED" data-en="Flat LED">平面LED</button>
-                    <button id="screen-btn-curved" class="rc-btn" data-mode="curved-led" data-zh="柔性LED" data-en="Curved LED">柔性LED</button>
+
+                <div class="sidebar-settings-grid">
+                    <!-- Font Size Row -->
+                    <div class="settings-row">
+                        <span class="settings-label" data-zh="字号" data-en="SIZE">字号</span>
+                        <div class="reading-controls segmented-control" title="调节报告字号 / Adjust font size">
+                            <button class="rc-btn" data-scale="0.9">A−</button>
+                            <button class="rc-btn" data-scale="1" aria-current="true">A</button>
+                            <button class="rc-btn" data-scale="1.15">A+</button>
+                            <button class="rc-btn" data-scale="1.3">A++</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Theme & Notif Row -->
+                    <div class="settings-row">
+                        <span class="settings-label" data-zh="主题" data-en="THEME">主题</span>
+                        <div class="theme-control-wrapper">
+                            <!-- Toggle switch showing current theme state, plus the interactive pull chain! -->
+                            <div class="theme-icon-indicator" id="theme-icon-indicator">
+                                <span class="theme-icon-span dark-icon active" id="theme-dark-icon">🌙</span>
+                                <span class="theme-icon-span light-icon" id="theme-light-icon">☀️</span>
+                            </div>
+                            
+                            <!-- Pull chain element -->
+                            <div class="pull-chain-wrapper" id="theme-pull-chain" title="拉绳切换主题 / Pull string to switch theme">
+                                <div class="pull-chain-string"></div>
+                                <div class="pull-chain-ring"></div>
+                            </div>
+                            
+                            <!-- Hidden legacy buttons to prevent breaking existing click event listeners -->
+                            <button id="theme-btn-dark" data-theme="dark" style="display:none"></button>
+                            <button id="theme-btn-light" data-theme="light" style="display:none"></button>
+                            
+                            <!-- Notif toggle button aligned neatly to the right of the row -->
+                            <button id="notif-toggle-btn" class="rc-btn notif-btn" title="桌面通知 / Desktop notifications">🔔</button>
+                        </div>
+                    </div>
+
+                    <!-- Screen Mode Row -->
+                    <div class="settings-row">
+                        <span class="settings-label" data-zh="屏幕" data-en="SCREEN">屏幕</span>
+                        <div class="screen-controls segmented-control" title="屏幕模式 / Screen Mode">
+                            <button id="screen-btn-default" class="rc-btn" data-mode="default" aria-current="true" data-zh="默认" data-en="Default">默认</button>
+                            <button id="screen-btn-flat" class="rc-btn" data-mode="flat-led" data-zh="平面LED" data-en="Flat LED">平面LED</button>
+                            <button id="screen-btn-curved" class="rc-btn" data-mode="curved-led" data-zh="柔性LED" data-en="Curved LED">柔性LED</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
