@@ -1087,11 +1087,11 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     overflow: hidden;
-    opacity: 0.65;
-    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-}
-.toc-sidebar:hover {
-    opacity: 1.0;
+    /* Fully opaque so the nav is always legible — it used to sit at 65%
+       opacity and only sharpen on hover, which left it faint/hard to read
+       on touch devices (no hover) and in light theme. */
+    opacity: 1;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 @media (min-width: 1025px) {
@@ -3413,8 +3413,10 @@ body.theme-light {
     --text-primary: #111827;
     --text-body:    #1f2937;
     --text-heading: #030712;
-    --text-secondary:#4b5563;
-    --text-muted:   #9ca3af;
+    --text-secondary:#374151;
+    /* #9ca3af was too light on white (contrast ~2.5:1, below WCAG AA);
+       #6b7280 reads clearly while still looking muted. */
+    --text-muted:   #6b7280;
     --shadow-card:  0 4px 20px rgba(15, 23, 42, 0.08);
 }
 body.theme-light .sidebar-config { background: #ffffff; border-right-color: #e5e7eb; }

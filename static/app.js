@@ -72,6 +72,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const errorBanner   = document.getElementById("loading-error-banner");
     const errorMessage  = document.getElementById("loading-error-message");
     const exportPdfBtn  = document.getElementById("export-pdf-btn");
+    const sidebarReaderBtn = document.getElementById("sidebar-reader-btn");
+    const sendEmailBtn = document.getElementById("send-email-btn");
+    const reportEmailInput = document.getElementById("report-email-input");
+    const emailStatusMsg = document.getElementById("email-status-msg");
 
     setLang('zh');
 
@@ -491,7 +495,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // print-to-PDF (no PDF-generation dependency needed).
     // ----------------------------------------------------------------
     exportPdfBtn.addEventListener("click", async () => {
-        if (!currentJobId || exportPdfBtn.disabled) return;
+        if (exportPdfBtn.disabled) return;
 
         // Open synchronously, in direct response to the click, so popup
         // blockers don't treat the later async navigation as unsolicited.
@@ -510,12 +514,32 @@ document.addEventListener("DOMContentLoaded", () => {
         label.textContent = currentLang === 'zh' ? "AI 润色中…" : "AI polishing...";
 
         try {
-            const resp = await fetch(`/api/jobs/${currentJobId}/polish`, { method: "POST" });
-            if (!resp.ok) {
-                const body = await resp.json().catch(() => ({}));
-                throw new Error(body.detail || ("HTTP " + resp.status));
+            let polished_markdown = "";
+            if (currentJobId) {
+                const resp = await fetch(`/api/jobs/${currentJobId}/polish`, { method: "POST" });
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => ({}));
+                    throw new Error(body.detail || ("HTTP " + resp.status));
+                }
+                const data = await resp.json();
+                polished_markdown = data.polished_markdown;
+            } else {
+                // Historical report fallback
+                const ticker = document.getElementById("res-ticker").textContent;
+                const date = document.getElementById("res-date").textContent;
+                const resp = await fetch("/api/reports/polish", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ticker: ticker, trade_date: date })
+                });
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => ({}));
+                    throw new Error(body.detail || ("HTTP " + resp.status));
+                }
+                const data = await resp.json();
+                polished_markdown = data.polished_markdown;
             }
-            const { polished_markdown } = await resp.json();
+
             printWin.document.open();
             printWin.document.write(_buildPrintableHtml(polished_markdown));
             printWin.document.close();
@@ -534,6 +558,70 @@ document.addEventListener("DOMContentLoaded", () => {
             label.textContent = originalLabel;
         }
     });
+
+    // Sidebar Reader button click handler
+    if (sidebarReaderBtn) {
+        sidebarReaderBtn.addEventListener("click", () => {
+            readerActive = !readerActive;
+            applySettings();
+        });
+    }
+
+    // Send email button click handler
+    if (sendEmailBtn) {
+        sendEmailBtn.addEventListener("click", async () => {
+            const email = reportEmailInput.value.trim();
+            if (!email) {
+                alert(currentLang === 'zh' ? "请输入有效的邮箱地址！" : "Please enter a valid email address!");
+                return;
+            }
+            // Simple email validation regex
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                alert(currentLang === 'zh' ? "邮箱格式不正确！" : "Invalid email format!");
+                return;
+            }
+
+            const ticker = document.getElementById("res-ticker")?.textContent || "";
+            const date = document.getElementById("res-date")?.textContent || "";
+            if (!ticker || !date) {
+                alert(currentLang === 'zh' ? "未找到报告数据，无法发送！" : "No report data found to send!");
+                return;
+            }
+
+            sendEmailBtn.disabled = true;
+            emailStatusMsg.style.display = "block";
+            emailStatusMsg.style.color = "var(--text-muted)";
+            emailStatusMsg.textContent = currentLang === 'zh' ? "正在发送报告..." : "Sending report...";
+
+            try {
+                const resp = await fetch("/api/reports/send-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        ticker: ticker,
+                        trade_date: date,
+                        email: email
+                    })
+                });
+
+                const res = await resp.json();
+                if (resp.ok) {
+                    emailStatusMsg.style.color = "#30D158";
+                    emailStatusMsg.textContent = currentLang === 'zh' ? "✓ 报告发送成功！" : "✓ Email sent successfully!";
+                } else {
+                    emailStatusMsg.style.color = "#FF453A";
+                    emailStatusMsg.textContent = "✗ " + (res.detail || res.message || (currentLang === 'zh' ? "发送失败" : "Failed"));
+                }
+            } catch (err) {
+                console.error("Email sending failed:", err);
+                emailStatusMsg.style.color = "#FF453A";
+                emailStatusMsg.textContent = currentLang === 'zh' ? "✗ 网络错误，请重试。" : "✗ Network error, try again.";
+            } finally {
+                sendEmailBtn.disabled = false;
+            }
+        });
+    }
 
     function _loadingPrintPage() {
         const msg = currentLang === 'zh'

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.3] — 2026-07-18
+
+Feature release: added a sidebar entry point for Reader Mode, implemented backend SMTP email report delivery with rich HTML formatting, and enabled AI-polishing and PDF exports for historical report runs.
+
+### Added
+
+- **Email Report System.** Added a form under the TOC sidebar navigation allowing users to input an email address to send the analysis report. The backend constructs a fully responsive, styled HTML newsletter presenting critical KPI prices, final decisions, and all detailed agent analysis sections.
+- **Historical Report Polishing & PDF Export.** Enabled the PDF Export button to work on historical report views retrieved from the History tab. The backend automatically handles the AI-polishing pass for old report records and caches the polished result back into the SQLite database.
+- **Sidebar Reader Mode Toggle.** Added a sister button to the PDF export button in the TOC sidebar to easily toggle Reader Mode.
+
 ## [0.4.2] — 2026-07-18
 
 Polishing release: disabled the hide-on-scroll logic on desktop views to keep the reader toolbar stickily visible, guaranteeing the back button is always accessible.

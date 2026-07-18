@@ -2,7 +2,7 @@
 // always be live. We only precache the static shell so the app opens
 // instantly on repeat visits and can degrade gracefully offline (showing
 // a "no network" page rather than a chrome error).
-const CACHE = 'ta-shell-v0.4.2';
+const CACHE = 'ta-shell-v0.4.3';
 const SHELL = ['/', '/style.css', '/app.js', '/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', (e) => {

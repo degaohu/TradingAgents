@@ -885,10 +885,245 @@ def polish_report(job_id: str):
         raise HTTPException(status_code=409, detail="job has no completed result to polish yet")
     try:
         polished = job.get_or_create_polished_report(lambda: generate_polished_report(job))
+        # Update history cache so it is persisted
+        if job.started_by and job.result:
+            res = history.get_history_result(job.started_by, job.ticker, job.trade_date)
+            if res:
+                res["polished_markdown"] = polished
+                rating = res.get("decision", "HOLD")
+                history.save_history(job.started_by, job.ticker, job.trade_date, rating, res)
     except Exception as exc:
         logger.exception("AI polish failed for job %s", job_id)
         raise HTTPException(status_code=502, detail=f"AI polish failed: {exc}") from exc
     return {"polished_markdown": polished}
+
+
+class EmailReportRequest(BaseModel):
+    ticker: str
+    trade_date: str
+    email: str
+
+
+@app.post("/api/reports/send-email")
+def send_email_report_endpoint(req: EmailReportRequest, request: Request):
+    user = _get_current_user(request)
+    # Fetch result from history
+    result = history.get_history_result(user, req.ticker, req.trade_date)
+    if result is None:
+        # Check if it matches a running/completed job in the registry that hasn't cleared yet
+        found_job = None
+        for job in registry.list_jobs():
+            if job.ticker == req.ticker and job.trade_date == req.trade_date and job.result:
+                found_job = job
+                break
+        if found_job:
+            result = found_job.result
+        else:
+            raise HTTPException(status_code=404, detail="No analysis report found for this ticker and date.")
+
+    # Send the email!
+    smtp_host = os.environ.get("TRADINGAGENTS_SMTP_HOST")
+    smtp_user = os.environ.get("TRADINGAGENTS_SMTP_USER")
+    smtp_pass = os.environ.get("TRADINGAGENTS_SMTP_PASS")
+    
+    if not smtp_host or not smtp_user or not smtp_pass:
+        raise HTTPException(
+            status_code=501, 
+            detail="邮件发送服务未配置。请联系系统管理员在服务器端配置 TRADINGAGENTS_SMTP_HOST, TRADINGAGENTS_SMTP_USER, TRADINGAGENTS_SMTP_PASS 环境变量。"
+        )
+
+    try:
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        smtp_port = int(os.environ.get("TRADINGAGENTS_SMTP_PORT", "587"))
+        smtp_from = os.environ.get("TRADINGAGENTS_SMTP_FROM") or smtp_user
+        
+        # Build HTML content
+        # Check if we have polished report
+        polished_md = result.get("polished_markdown")
+        
+        def markdown_to_html(md: str) -> str:
+            import re
+            md = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', md, flags=re.MULTILINE)
+            md = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', md, flags=re.MULTILINE)
+            md = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', md, flags=re.MULTILINE)
+            md = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', md)
+            md = re.sub(r'^\s*-\s*(.*?)$', r'<li>\1</li>', md, flags=re.MULTILINE)
+            md = re.sub(r'(<li>.*?</li>)', r'<ul>\1</ul>', md, flags=re.DOTALL)
+            md = md.replace('</ul>\n<ul>', '')
+            
+            paragraphs = md.split('\n\n')
+            html_paras = []
+            for p in paragraphs:
+                p_clean = p.strip()
+                if not p_clean:
+                    continue
+                if p_clean.startswith('<h') or p_clean.startswith('<ul'):
+                    html_paras.append(p_clean)
+                else:
+                    html_paras.append(f"<p>{p_clean.replace('\n', '<br>')}</p>")
+            return '\n'.join(html_paras)
+
+        dec_color = "#30D158" if "BUY" in result.get("decision", "HOLD").upper() else ("#FF453A" if "SELL" in result.get("decision", "HOLD").upper() else "#FF9500")
+        
+        summary = result.get("decision_summary") or {}
+        entry = summary.get("entry_price", "--")
+        target = summary.get("target_price", "--")
+        stop = summary.get("stop_loss", "--")
+        position = summary.get("suggested_position", "--")
+        horizon = summary.get("time_horizon", "--")
+        rr = summary.get("risk_reward_ratio", "--")
+
+        html_body = f"""
+        <html>
+        <head>
+        <style>
+          body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #333333; line-height: 1.6; padding: 20px; background-color: #f7f9fa; }}
+          .container {{ max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid #e1e4e6; border-radius: 8px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+          .header {{ border-bottom: 2px solid #333333; padding-bottom: 20px; margin-bottom: 24px; }}
+          .title {{ font-size: 24px; font-weight: 800; margin: 0; color: #111111; letter-spacing: -0.5px; }}
+          .subtitle {{ font-size: 13px; color: #666666; margin: 4px 0 0 0; font-family: monospace; }}
+          .badge {{ display: inline-block; padding: 6px 14px; border-radius: 4px; font-weight: bold; font-size: 14px; color: #ffffff; background-color: {dec_color}; }}
+          .kpi-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; }}
+          .kpi-table th, .kpi-table td {{ border: 1px solid #e1e4e6; padding: 10px 12px; text-align: left; }}
+          .kpi-table th {{ background-color: #f1f3f5; color: #495057; font-weight: 700; }}
+          .section {{ margin-bottom: 30px; border-bottom: 1px solid #f1f3f5; padding-bottom: 20px; }}
+          .section-title {{ font-size: 16px; font-weight: 700; color: #1a1a1a; margin-top: 0; margin-bottom: 12px; border-left: 4px solid {dec_color}; padding-left: 10px; }}
+          .section-content {{ font-size: 14px; color: #444444; white-space: pre-wrap; }}
+          .footer {{ text-align: center; font-size: 11px; color: #999999; margin-top: 40px; border-top: 1px solid #e1e4e6; padding-top: 20px; }}
+        </style>
+        </head>
+        <body>
+        <div class="container">
+          <div class="header">
+            <h1 class="title">■ TradingAgents 量化投资分析报告</h1>
+            <p class="subtitle">{req.ticker} | 分析日期：{req.trade_date}</p>
+          </div>
+          
+          <div class="section">
+            <h2 class="section-title">最终投资决策</h2>
+            <span class="badge">{result.get("decision", "HOLD")}</span>
+          </div>
+          
+          <table class="kpi-table">
+            <tr><th>股票代码</th><td>{req.ticker}</td><th>分析日期</th><td>{req.trade_date}</td></tr>
+            <tr><th>建议入场价</th><td>{entry}</td><th>风报比 R:R</th><td>{rr}</td></tr>
+            <tr><th>止损价</th><td>{stop}</td><th>目标价</th><td>{target}</td></tr>
+            <tr><th>建议仓位</th><td>{position}</td><th>时间尺度</th><td>{horizon}</td></tr>
+          </table>
+        """
+
+        if polished_md:
+            html_body += f"""
+            <div class="section" style="background-color:#fafbfc;border:1px solid #e1e4e6;padding:20px;border-radius:6px;margin-bottom:30px;">
+              <h2 class="section-title" style="border-left-color:#FF2D55;">✨ AI 润色深度研报 (Cohesive AI Report)</h2>
+              <div class="section-content" style="font-size:14.5px;color:#2c3e50;">{markdown_to_html(polished_md)}</div>
+            </div>
+            """
+
+        sections = [
+            ("市场与技术面分析", result.get("market_report")),
+            ("社交情绪面分析", result.get("sentiment_report")),
+            ("宏观与新闻面分析", result.get("news_report")),
+            ("财务基本面分析", result.get("fundamentals_report")),
+            ("决策经理辩论摘要", result.get("investment_plan")),
+            ("交易执行方案", result.get("trader_investment_plan")),
+            ("风控分析与建议", result.get("final_trade_decision")),
+        ]
+
+        for s_title, s_content in sections:
+            if s_content:
+                s_html = s_content.replace("\n", "<br>")
+                html_body += f"""
+                <div class="section">
+                  <h2 class="section-title">{s_title}</h2>
+                  <div class="section-content">{s_html}</div>
+                </div>
+                """
+
+        html_body += f"""
+          <div class="footer">
+            <p>本报告由 TradingAgents 智能体量化系统自动生成。仅供参考，不构成投资建议。</p>
+            <p>© 2026 TradingAgents. All rights reserved.</p>
+          </div>
+        </div>
+        </body>
+        </html>
+        """
+
+        # Construct Email Message
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"【TradingAgents】{req.ticker} 量化分析研报 ({req.trade_date})"
+        msg["From"] = smtp_from
+        msg["To"] = req.email
+
+        msg.attach(MIMEText(html_body, "html"))
+
+        # Send using smtplib
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10.0)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10.0)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_from, req.email, msg.as_string())
+        server.quit()
+
+        return {"status": "success", "message": "Email sent successfully"}
+    except Exception as exc:
+        logger.exception("Failed to send email to %s for report %s", req.email, req.ticker)
+        raise HTTPException(status_code=502, detail=f"Email sending failed: {exc}")
+
+
+class PolishReportRequest(BaseModel):
+    ticker: str
+    trade_date: str
+
+
+@app.post("/api/reports/polish")
+def polish_historical_report(req: PolishReportRequest, request: Request):
+    user = _get_current_user(request)
+    result = history.get_history_result(user, req.ticker, req.trade_date)
+    if result is None:
+        raise HTTPException(status_code=404, detail="history entry not found")
+        
+    # Check if polished markdown is already generated and cached
+    polished = result.get("polished_markdown")
+    if polished:
+        return {"polished_markdown": polished}
+
+    # Otherwise, generate it!
+    # Get active LLM config
+    config = _get_default_config()
+    try:
+        from tradingagents.llm_clients import create_llm_client
+        from web.polish import _build_polish_prompt, generate_polished_report
+        
+        # Build client config using defaults
+        client = create_llm_client(
+            provider=config.get("llm_provider", "openai"),
+            model=config.get("deep_think_llm", "gpt-5.5"),
+            base_url=config.get("backend_url"),
+        )
+        llm = client.get_llm()
+        prompt = _build_polish_prompt(result, config.get("output_language", "English"))
+        response = llm.invoke(prompt)
+        polished = response.content
+
+        # Cache it back to history!
+        result["polished_markdown"] = polished
+        rating = result.get("decision", "HOLD")
+        history.save_history(user, req.ticker, req.trade_date, rating, result)
+        
+        return {"polished_markdown": polished}
+    except Exception as exc:
+        logger.exception("AI polish failed for historical report %s", req.ticker)
+        raise HTTPException(status_code=502, detail=f"AI polish failed: {exc}") from exc
 
 
 @app.post("/api/jobs/{job_id}/cancel")

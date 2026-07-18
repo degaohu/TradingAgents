@@ -747,6 +747,17 @@
                             <button id="export-pdf-btn" class="export-pdf-btn" type="button" disabled style="width: 100%; text-align: left; padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border-color);">
                                 <span>■</span> <span data-zh="导出 PDF 报告" data-en="Export PDF Report">导出 PDF 报告</span>
                             </button>
+                            <button id="sidebar-reader-btn" class="sidebar-reader-btn" type="button" style="width: 100%; text-align: left; padding: 12px 0 0; margin-top: 10px; border: none; background: none; color: var(--accent-pink); font-weight: 700; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 8px; color: var(--accent-pink);">■</span> <span data-zh="进入社论阅读模式" data-en="Reader Mode">进入社论阅读模式</span>
+                            </button>
+                            <div class="email-report-container" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-color);">
+                                <label style="display: block; font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;" data-zh="发送报告至邮箱" data-en="Email Report">发送报告至邮箱</label>
+                                <div style="display: flex; gap: 6px; align-items: center;">
+                                    <input type="email" id="report-email-input" placeholder="输入邮箱地址..." style="flex: 1; padding: 6px 8px; font-size: 11px; background: var(--bg-item, #161b22); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main, #e6edf3); outline: none;">
+                                    <button id="send-email-btn" class="btn" style="padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-item, #161b22); color: var(--text-main, #e6edf3); cursor: pointer;" data-zh="发送" data-en="Send">发送</button>
+                                </div>
+                                <div id="email-status-msg" style="font-size: 10px; margin-top: 6px; display: none; font-weight: 600;"></div>
+                            </div>
                         </nav>
                         </div>
                     </aside>
