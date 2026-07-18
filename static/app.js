@@ -151,7 +151,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (advPanel && me.is_admin) {
                     advPanel.style.display = '';
                 }
-                if (me.version && versionEl) versionEl.textContent = 'v' + me.version;
+                if (me.version) {
+                    if (versionEl) versionEl.textContent = 'v' + me.version;
+                    const mobVersionEl = document.getElementById('mob-version');
+                    if (mobVersionEl) mobVersionEl.textContent = 'v' + me.version;
+                }
                 updateQuotaUI(me);
             })
             .catch(() => { /* account bar is a nicety, not critical path */ });
@@ -2920,7 +2924,7 @@ window.__taApplyTocSentiments = function(data) {
     topbar.style.display = 'flex';   // always show on tablet/mobile (JS only runs when isTablet())
     topbar.innerHTML = `
       <span class="logo-icon" style="color:var(--accent-pink);font-size:13px">■</span>
-      <span class="logo-text">TRADING AGENTS</span>
+      <span class="logo-text">TRADING AGENTS <span id="mob-version" style="font-size:9px; opacity:0.5; font-family:var(--font-mono); font-weight:500; margin-left:4px;"></span></span>
       <span class="topbar-ticker" id="mob-ticker"></span>
     `;
     mainContent.insertBefore(topbar, mainContent.firstChild);
@@ -2975,7 +2979,22 @@ window.__taApplyTocSentiments = function(data) {
         }
     }
     tabbar.querySelectorAll('.tab-btn-mobile').forEach(btn => {
-        btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.tab;
+            if (key === 'analyze') {
+                const currentTab = appContainer.getAttribute('data-mobile-tab') || 'analyze';
+                if (currentTab === 'analyze') {
+                    // Clicking the active Analyze tab resets the view to the Welcome screen
+                    if (!welcomeView.classList.contains("active")) {
+                        showView(welcomeView);
+                    }
+                } else {
+                    setActiveTab('analyze');
+                }
+            } else {
+                setActiveTab(key);
+            }
+        });
     });
     setActiveTab('analyze');
 
