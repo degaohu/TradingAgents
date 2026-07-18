@@ -157,5 +157,4 @@ class TestPipelineTrackerDownstream:
         assert (RISK_DEBATE, "done") in stage_statuses
         assert (PORTFOLIO_MANAGER, "done") in stage_statuses
         pm_reports = next(e[3] for e in log.events if e[0] == PORTFOLIO_MANAGER)
-        assert pm_reports["risk-judge-content"] == "**Rating**: Overweight"
-        assert pm_reports["final-decision-content"] == "**Rating**: Overweight"
+        assert pm_reports == {"risk-judge-content": "**Rating**: Overweight"}

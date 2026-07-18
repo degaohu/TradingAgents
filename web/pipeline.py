@@ -167,7 +167,4 @@ class PipelineTracker:
             self._set(RISK_DEBATE, "running", reports)
         if risk.get("judge_decision"):
             self._set(RISK_DEBATE, "done")
-            self._set(
-                PORTFOLIO_MANAGER, "done",
-                {"risk-judge-content": risk["judge_decision"], "final-decision-content": risk["judge_decision"]},
-            )
+            self._set(PORTFOLIO_MANAGER, "done", {"risk-judge-content": risk["judge_decision"]})

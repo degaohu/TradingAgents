@@ -111,6 +111,95 @@ _RATING_SCORE = {
 }
 
 
+def _compute_confidence(
+    final_state: dict,
+    rating_action: str,
+    position_action: str | None,
+    has_entry: bool,
+    has_stop: bool,
+    has_target: bool,
+) -> dict:
+    """0-100 confidence score derived from the debate and plan completeness.
+
+    Bloomberg/TradingView analyst rating pages surface a single scalar
+    like "80% strong buy" — we synthesize an equivalent from artifacts
+    we already have on hand:
+
+    - **Debate depth**: longer bull+bear histories = more evidence weighed.
+      We cap the contribution; a novella isn't 10× more valuable than a
+      well-argued paragraph.
+    - **Debate balance**: if one side monopolized the conversation the
+      manager didn't really adjudicate; a mixed transcript scores higher.
+    - **Signal consistency**: rating action matches position-sizing action
+      is worth a big chunk — mismatches destroy trust.
+    - **Plan completeness**: entry+stop+target all specified means the
+      trader was confident enough to commit numbers.
+
+    Returned dict includes the score and a per-component breakdown so the
+    UI can render a tooltip explaining why the number came out where it did.
+    """
+    investment = final_state.get("investment_debate_state") or {}
+    bull = investment.get("bull_history") or ""
+    bear = investment.get("bear_history") or ""
+    debate_count = int(investment.get("count") or 0)
+
+    bull_len, bear_len = len(bull), len(bear)
+    total = bull_len + bear_len
+
+    # Depth: 0..25. Full points once combined transcript exceeds ~4k chars.
+    depth = min(25, round((total / 4000) * 25))
+
+    # Balance: 0..15. Peaks when both sides contributed roughly equally.
+    if total == 0:
+        balance = 0
+    else:
+        share = min(bull_len, bear_len) / total
+        balance = round(share * 30)  # 0.5 share × 30 = 15
+        balance = min(15, balance)
+
+    # Round bonus: >= 2 rounds means the manager saw rebuttals, not just
+    # opening statements. Up to 10 points.
+    rounds = min(10, debate_count * 5)
+
+    # Consistency: 30 for match, 0 for mismatch, 15 when we can't tell
+    # (position text absent — no signal either way).
+    if position_action is None:
+        consistency = 15
+    else:
+        consistency = 30 if position_action == rating_action else 0
+
+    # Plan completeness: 5 points each for entry / stop / target = 15 max.
+    plan = (5 if has_entry else 0) + (5 if has_stop else 0) + (5 if has_target else 0)
+
+    # Rating conviction: hold sits at neutral, edges get a bump. 0..5.
+    conviction = {2: 5, -2: 5, 1: 3, -1: 3, 0: 1}.get(_RATING_SCORE.get(rating_action, 0), 1)
+
+    total_score = depth + balance + rounds + consistency + plan + conviction
+    # Never claim 0 or 100 — those imply certainty we don't have.
+    total_score = max(5, min(95, total_score))
+
+    return {
+        "score": total_score,
+        "components": {
+            "debate_depth": depth,
+            "debate_balance": balance,
+            "debate_rounds": rounds,
+            "signal_consistency": consistency,
+            "plan_completeness": plan,
+            "rating_conviction": conviction,
+        },
+        "band": _confidence_band(total_score),
+    }
+
+
+def _confidence_band(score: int) -> str:
+    if score >= 75:
+        return "high"
+    if score >= 50:
+        return "medium"
+    return "low"
+
+
 def build_decision_summary(final_state: dict, rating: str) -> dict:
     """Assemble the decision-header payload.
 
@@ -163,6 +252,12 @@ def build_decision_summary(final_state: dict, rating: str) -> dict:
             ),
         }
 
+    confidence = _compute_confidence(
+        final_state, rating_action, position_action,
+        has_entry=entry is not None, has_stop=stop is not None,
+        has_target=target is not None,
+    )
+
     return {
         "rating": rating,
         "rating_score": _RATING_SCORE.get(rating, 0),
@@ -178,4 +273,5 @@ def build_decision_summary(final_state: dict, rating: str) -> dict:
         "upside_pct": upside_pct,
         "downside_pct": downside_pct,
         "consistency": consistency,
+        "confidence": confidence,
     }

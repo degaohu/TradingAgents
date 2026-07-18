@@ -56,6 +56,62 @@ def _isolate_config():
     config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_admin_activity_db(tmp_path, monkeypatch):
+    """Redirect web/activity.py's SQLite file to a per-test temp path.
+
+    Global and autouse (not just in the web-admin test files) because any
+    test that exercises web/routes.py's login or /api/analyze path writes
+    through this module — without this, running the suite quietly appends
+    fake login/analysis rows to the developer's real
+    ``~/.tradingagents/web_admin.db`` (caught the hard way: a local smoke
+    test after adding admin activity logging showed test-suite noise —
+    ip="testclient" rows — already present in the real file).
+    """
+    try:
+        from web import activity
+    except ImportError:
+        return  # fastapi/uvicorn (the "web" extra) not installed in this env
+    monkeypatch.setattr(activity, "_DB_PATH", str(tmp_path / "web_admin_test.db"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_history_db(tmp_path, monkeypatch):
+    """Redirect web/history.py's SQLite file to a per-test temp path — same
+    reasoning as _isolate_admin_activity_db above, for the same reason:
+    completed /api/analyze runs in tests must not write into the real
+    ~/.tradingagents/web_history.db."""
+    try:
+        from web import history
+    except ImportError:
+        return
+    monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "web_history_test.db"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_quota_db(tmp_path, monkeypatch):
+    """Redirect web/quota.py's SQLite file to a per-test temp path — same
+    reasoning as the history/activity isolation above."""
+    try:
+        from web import quota
+    except ImportError:
+        return
+    monkeypatch.setattr(quota, "_DB_PATH", str(tmp_path / "web_quota_test.db"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_users_db(tmp_path, monkeypatch):
+    """Redirect web/users.py's SQLite file to a per-test temp path, and reset
+    its one-time seed guard so each test's fresh DB is re-seeded from the
+    env-var users (routes._USERS)."""
+    try:
+        from web import users
+    except ImportError:
+        return
+    monkeypatch.setattr(users, "_DB_PATH", str(tmp_path / "web_users_test.db"))
+    monkeypatch.setattr(users, "_seeded_path", None)
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

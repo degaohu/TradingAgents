@@ -15,7 +15,7 @@ class AnalystExecutionPlanTests(unittest.TestCase):
         self.assertEqual([spec.key for spec in plan.specs], ["news", "market"])
         self.assertEqual(plan.specs[0].agent_node, "News Analyst")
         self.assertEqual(plan.specs[0].tool_node, "tools_news")
-        self.assertEqual(plan.specs[0].clear_node, "Msg Clear News")
+        self.assertEqual(plan.specs[0].messages_key, "news_messages")
 
     def test_rejects_unknown_analyst_keys(self):
         with self.assertRaises(ValueError):
@@ -65,7 +65,11 @@ class AnalystWallTimeTrackerTests(unittest.TestCase):
             "Analyst wall time: News 4.00s | Market 2.25s",
         )
 
-    def test_syncs_wall_time_from_sequential_chunks(self):
+    def test_syncs_wall_time_from_parallel_chunks(self):
+        # All analysts run as parallel branches (setup.py fans out from
+        # START to every one of them), so both are "started" from the very
+        # first chunk — wall time is measured from that shared start, not
+        # from whenever the previous analyst happened to finish.
         plan = build_analyst_execution_plan(["market", "news"])
         tracker = AnalystWallTimeTracker(plan)
 
@@ -86,5 +90,5 @@ class AnalystWallTimeTrackerTests(unittest.TestCase):
         )
         self.assertEqual(
             tracker.get_wall_times(),
-            {"market": 3.0, "news": 5.0},
+            {"market": 3.0, "news": 8.0},
         )

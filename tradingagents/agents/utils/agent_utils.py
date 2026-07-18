@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import yfinance as yf
-from langchain_core.messages import HumanMessage, RemoveMessage
+from langchain_core.messages import HumanMessage
 
 # Import tools from separate utility files
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
@@ -43,7 +43,7 @@ __all__ = [
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
     "get_language_instruction",
-    "create_msg_delete",
+    "build_analyst_seed_message",
 ]
 
 logger = logging.getLogger(__name__)
@@ -56,13 +56,20 @@ def get_language_instruction() -> str:
     Applied to every agent whose output reaches the saved report —
     analysts, researchers, debaters, research manager, trader, and
     portfolio manager — so a non-English run produces a fully localized
-    report rather than a mix of languages.
+    report rather than a mix of languages. Tickers, company names, and
+    technical/financial terms are explicitly carved out so a Chinese (or
+    other non-English) report still reads "AAPL" and "MACD" rather than a
+    transliteration or a translated indicator name a trader wouldn't recognize.
     """
     from tradingagents.dataflows.config import get_config
     lang = get_config().get("output_language", "English")
     if lang.strip().lower() == "english":
         return ""
-    return f" Write your entire response in {lang}."
+    return (
+        f" Write your entire response in {lang}, except keep tickers, company "
+        "names, and technical/financial terms (e.g. MACD, RSI, EPS, P/E) in "
+        "their original form rather than translating or transliterating them."
+    )
 
 
 def _clean_identity_value(value: Any) -> str | None:
@@ -187,31 +194,24 @@ def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:
     )
 
 
-def create_msg_delete():
-    def delete_messages(state):
-        """Clear messages and add a context-anchored placeholder.
+def build_analyst_seed_message(state) -> HumanMessage:
+    """Build the context-anchored placeholder each analyst's tool-calling
+    conversation starts from.
 
-        The placeholder must not be a bare ``"Continue"``: some
-        OpenAI-compatible providers interpret that literally as the user task
-        and produce output about the word "continue" instead of analysing the
-        instrument (#888). Anchoring it to the resolved instrument context and
-        date keeps the next analyst on-task even if the provider treats the
-        placeholder as a standalone request.
-        """
-        messages = state["messages"]
-        removal_operations = [RemoveMessage(id=m.id) for m in messages]
-
-        instrument_context = get_instrument_context_from_state(state)
-        trade_date = state.get("trade_date", "the requested date")
-        placeholder = HumanMessage(
-            content=(
-                f"Proceed with your assigned analysis for this workflow. "
-                f"{instrument_context} The analysis date is {trade_date}."
-            )
+    Must not be a bare ``"Continue"``: some OpenAI-compatible providers
+    interpret that literally as the user task and produce output about the
+    word "continue" instead of analysing the instrument (#888). Anchoring it
+    to the resolved instrument context and date keeps every analyst on-task
+    regardless of how a provider treats a short placeholder.
+    """
+    instrument_context = get_instrument_context_from_state(state)
+    trade_date = state.get("trade_date", "the requested date")
+    return HumanMessage(
+        content=(
+            f"Proceed with your assigned analysis for this workflow. "
+            f"{instrument_context} The analysis date is {trade_date}."
         )
-        return {"messages": removal_operations + [placeholder]}
-
-    return delete_messages
+    )
 
 
 

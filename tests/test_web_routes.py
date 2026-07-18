@@ -88,7 +88,17 @@ class _FakeGraphFactory:
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setattr(routes_module, "registry", JobRegistry())
-    return TestClient(routes_module.app)
+    c = TestClient(routes_module.app)
+    # The dashboard requires a logged-in session for everything except
+    # /login, /api/login, /api/logout (see auth_middleware) — log in as the
+    # admin test user so the session cookie carries through every request
+    # this client instance makes for the rest of the test.
+    login = c.post(
+        "/api/login",
+        json={"username": "admin", "password": routes_module._USERS["admin"]},
+    )
+    assert login.status_code == 200, login.text
+    return c
 
 
 def _read_sse_events(client, job_id, terminal_types=("result", "error", "cancelled")):
@@ -246,6 +256,98 @@ class TestPolishEndpoint:
 
         resp = client.post(f"/api/jobs/{job_id}/polish")
         assert resp.status_code == 502
+
+
+@pytest.mark.unit
+class TestHistoryEndpoints:
+    def test_completed_analysis_is_persisted_and_listed(self, client, monkeypatch):
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        job_id = resp.json()["job_id"]
+        _read_sse_events(client, job_id)
+
+        items = client.get("/api/history").json()["items"]
+        assert len(items) == 1
+        assert items[0]["ticker"] == "NVDA"
+        assert items[0]["trade_date"] == "2026-01-15"
+        assert items[0]["decision"] == "Overweight"
+
+    def test_history_entry_returns_the_full_result_payload(self, client, monkeypatch):
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        job_id = resp.json()["job_id"]
+        events = _read_sse_events(client, job_id)
+        result_data = events[-1]["data"]
+
+        entry = client.get("/api/history/NVDA/2026-01-15").json()
+        assert entry == result_data
+
+    def test_unknown_history_entry_returns_404(self, client):
+        assert client.get("/api/history/NOPE/2026-01-01").status_code == 404
+
+    def test_history_is_scoped_to_the_requesting_user(self, client, monkeypatch):
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        # `client` is already logged in as admin (see the client fixture).
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        _read_sse_events(client, resp.json()["job_id"])
+
+        client.post(
+            "/api/login", json={"username": "user2", "password": routes_module._USERS["user2"]},
+        )
+        assert client.get("/api/history").json()["items"] == []
+        assert client.get("/api/history/NVDA/2026-01-15").status_code == 404
+
+
+@pytest.mark.unit
+class TestReportQuota:
+    def test_completed_report_decrements_a_non_admin_users_quota(self, client, monkeypatch):
+        from web import quota
+
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        # Log in as a non-admin and note the starting balance.
+        client.post("/api/login", json={"username": "user2", "password": routes_module._USERS["user2"]})
+        start = quota.get_remaining("user2")
+
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        _read_sse_events(client, resp.json()["job_id"])
+
+        assert quota.get_remaining("user2") == start - 1
+        assert client.get("/api/me").json()["quota"] == start - 1
+
+    def test_admin_quota_is_unlimited_and_never_decrements(self, client, monkeypatch):
+        # The `client` fixture is logged in as admin.
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        _read_sse_events(client, resp.json()["job_id"])
+        assert client.get("/api/me").json()["quota"] is None
+
+    def test_analyze_is_blocked_with_403_when_quota_is_zero(self, client, monkeypatch):
+        from web import quota
+
+        monkeypatch.setattr(routes_module, "TradingAgentsGraph", _FakeGraphFactory().build())
+        client.post("/api/login", json={"username": "user2", "password": routes_module._USERS["user2"]})
+        quota.set_remaining("user2", 0)
+
+        resp = client.post("/api/analyze", json={"ticker": "NVDA", "trade_date": "2026-01-15"})
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["error"] == "quota_exceeded"
+
+    def test_admin_can_top_up_a_users_quota(self, client):
+        from web import quota
+
+        quota.set_remaining("user2", 1)
+        resp = client.post("/api/admin/quota", json={"username": "user2", "add": 9})
+        assert resp.status_code == 200
+        assert resp.json() == {"username": "user2", "remaining": 10}
+        assert quota.get_remaining("user2") == 10
+
+    def test_admin_quota_endpoint_rejects_unknown_and_admin_targets(self, client):
+        assert client.post("/api/admin/quota", json={"username": "ghost", "add": 5}).status_code == 404
+        assert client.post("/api/admin/quota", json={"username": "admin", "add": 5}).status_code == 400
+
+    def test_non_admin_cannot_adjust_quota(self, client):
+        client.post("/api/login", json={"username": "user2", "password": routes_module._USERS["user2"]})
+        assert client.post("/api/admin/quota", json={"username": "user3", "add": 5}).status_code == 403
 
 
 def test_get_price_history_returns_success_with_prices(client, monkeypatch):

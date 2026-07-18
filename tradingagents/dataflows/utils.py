@@ -1,5 +1,7 @@
 import re
+import ssl
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Annotated
 
 import pandas as pd
@@ -40,6 +42,26 @@ def safe_ticker_component(value: str, *, max_len: int = 32) -> str:
     if set(value) == {"."}:
         raise ValueError(f"ticker cannot consist solely of dots: {value!r}")
     return value
+
+
+@lru_cache(maxsize=1)
+def default_ssl_context() -> ssl.SSLContext:
+    """TLS context for the stdlib ``urllib`` fetchers, preferring certifi's CAs.
+
+    python.org macOS builds ship an OpenSSL whose default CA paths are empty
+    until the bundled "Install Certificates.command" is run, so every plain
+    ``urlopen`` HTTPS call fails with CERTIFICATE_VERIFY_FAILED while the
+    requests-based vendors (which bundle certifi) keep working. Pointing the
+    context at certifi's bundle — already in our dependency tree via requests —
+    gives urllib the same trust store; certificate verification stays ON.
+    Falls back to the platform default context when certifi is unavailable.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except (ImportError, OSError):
+        return ssl.create_default_context()
 
 
 def save_output(data: pd.DataFrame, tag: str, save_path: SavePathType = None) -> None:

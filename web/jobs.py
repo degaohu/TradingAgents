@@ -3,9 +3,9 @@
 One analysis run = one ``Job``. The worker thread pushes progress as a flat,
 ordered event log (``Job.emit``); the SSE endpoint replays that log from any
 event id, so a page refresh mid-run reconnects and rebuilds full progress
-instead of losing it. Everything lives in process memory — this is a
-single-user local tool, not a multi-tenant service (see WEB_FRONTEND_PLAN.md
-"明确不做").
+instead of losing it. Everything lives in process memory (no cross-restart
+persistence) — several logged-in users can share this dashboard, but only
+one analysis runs at a time (see ``JobRegistry``).
 """
 
 from __future__ import annotations
@@ -17,11 +17,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # How long a job with zero attached SSE listeners is given to reconnect
-# (e.g. a page refresh, or a flaky network blip causing EventSource to
-# redial) before it's treated as abandoned and cancelled. Long enough that a
-# reload doesn't nuke a multi-minute analysis; short enough that closing the
-# tab actually stops the LLM calls instead of burning tokens unattended.
-_ABANDON_GRACE_SECONDS = 20.0
+# (e.g. a page refresh, a browser tab closed and reopened later, a flaky
+# network blip causing EventSource to redial) before it's treated as
+# abandoned and cancelled. Long enough that closing the app for a while —
+# locking the phone, switching apps, a longer errand — doesn't nuke an
+# in-progress analysis; short enough that a genuinely forgotten-about job
+# doesn't keep burning LLM API calls unattended indefinitely.
+_ABANDON_GRACE_SECONDS = 1800.0
 
 _TERMINAL_STATUSES = frozenset({"done", "error", "cancelled"})
 
@@ -44,6 +46,7 @@ class Job:
     result: dict[str, Any] | None = None
     error: str | None = None
     config: dict[str, Any] | None = None  # this run's config; reused for the AI-polish pass
+    started_by: str | None = None  # username that submitted this job; for the admin activity log
     polished_report: str | None = None  # cached AI-polished report (see routes.py's /polish)
 
     def __post_init__(self) -> None:

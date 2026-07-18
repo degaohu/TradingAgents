@@ -31,6 +31,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .symbol_utils import crypto_base
+from .utils import default_ssl_context
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def _fetch_subreddit_rss(
     url = _RSS.format(sub=sub, qs=_search_qs(ticker, limit))
     req = Request(url, headers={"User-Agent": _UA})
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=default_ssl_context()) as resp:
             root = ET.fromstring(resp.read())
     except HTTPError as exc:
         if exc.code == 429 and _retry:
@@ -161,7 +162,7 @@ def _fetch_subreddit_json(
     url = _API.format(sub=sub, qs=_search_qs(ticker, limit))
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=default_ssl_context()) as resp:
             payload = json.loads(resp.read())
         children = (payload.get("data") or {}).get("children") or []
         return [c.get("data", {}) for c in children if isinstance(c, dict)]

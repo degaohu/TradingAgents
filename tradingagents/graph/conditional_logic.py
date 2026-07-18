@@ -12,42 +12,45 @@ class ConditionalLogic:
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
 
     def should_continue_market(self, state: AgentState):
-        """Determine if market analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
+        """Determine if market analysis should continue.
+
+        Reads the market analyst's own ``market_messages`` channel, not the
+        shared ``messages`` list — the four analysts run as parallel graph
+        branches (see ``graph/setup.py``), so a shared list's "last message"
+        could belong to a different analyst's concurrent write.
+        """
+        last_message = state["market_messages"][-1]
         if last_message.tool_calls:
             return "tools_market"
-        return "Msg Clear Market"
+        return "Bull Researcher"
 
     def should_continue_social(self, state: AgentState):
         """Determine if sentiment-analyst tool round should continue.
 
         Method name keeps the legacy ``social`` suffix to match the
         ``AnalystType.SOCIAL = "social"`` wire value (saved-config
-        back-compat); the returned ``clear_node`` label uses the v0.2.5
-        rename so it matches the node registered by the execution plan.
+        back-compat). In practice the sentiment analyst never sets
+        ``tool_calls`` (it pre-fetches data and never binds tools — see
+        sentiment_analyst.py), so this always falls through to the join.
         """
-        messages = state["messages"]
-        last_message = messages[-1]
+        last_message = state["sentiment_messages"][-1]
         if last_message.tool_calls:
             return "tools_social"
-        return "Msg Clear Sentiment"
+        return "Bull Researcher"
 
     def should_continue_news(self, state: AgentState):
-        """Determine if news analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
+        """Determine if news analysis should continue (own channel; see should_continue_market)."""
+        last_message = state["news_messages"][-1]
         if last_message.tool_calls:
             return "tools_news"
-        return "Msg Clear News"
+        return "Bull Researcher"
 
     def should_continue_fundamentals(self, state: AgentState):
-        """Determine if fundamentals analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
+        """Determine if fundamentals analysis should continue (own channel; see should_continue_market)."""
+        last_message = state["fundamentals_messages"][-1]
         if last_message.tool_calls:
             return "tools_fundamentals"
-        return "Msg Clear Fundamentals"
+        return "Bull Researcher"
 
     def should_continue_debate(self, state: AgentState) -> str:
         """Determine if debate should continue."""

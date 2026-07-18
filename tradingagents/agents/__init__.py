@@ -14,11 +14,9 @@ from .risk_mgmt.conservative_debator import create_conservative_debator
 from .risk_mgmt.neutral_debator import create_neutral_debator
 from .trader.trader import create_trader
 from .utils.agent_states import AgentState, InvestDebateState, RiskDebateState
-from .utils.agent_utils import create_msg_delete
 
 __all__ = [
     "AgentState",
-    "create_msg_delete",
     "InvestDebateState",
     "RiskDebateState",
     "create_bear_researcher",

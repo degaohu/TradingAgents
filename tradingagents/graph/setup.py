@@ -12,7 +12,6 @@ from tradingagents.agents import (
     create_conservative_debator,
     create_fundamentals_analyst,
     create_market_analyst,
-    create_msg_delete,
     create_neutral_debator,
     create_news_analyst,
     create_portfolio_manager,
@@ -97,11 +96,16 @@ class GraphSetup:
         # Add analyst nodes to the graph
         for spec in plan.specs:
             workflow.add_node(spec.agent_node, analyst_factories[spec.key]())
-            workflow.add_node(spec.clear_node, create_msg_delete())
             workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
 
-        # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
+        # Add other nodes. "Bull Researcher" is marked defer=True: it is the
+        # join point for every analyst branch below, and without defer,
+        # LangGraph would run it once per analyst branch that reaches it
+        # (as soon as the first one arrives) rather than once after all of
+        # them have — duplicating the debate's opening round. (Verified
+        # against this LangGraph version with a standalone fan-out/fan-in
+        # script before relying on it here.)
+        workflow.add_node("Bull Researcher", bull_researcher_node, defer=True)
         workflow.add_node("Bear Researcher", bear_researcher_node)
         workflow.add_node("Research Manager", research_manager_node)
         workflow.add_node("Trader", trader_node)
@@ -110,29 +114,21 @@ class GraphSetup:
         workflow.add_node("Conservative Analyst", conservative_analyst)
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
-        # Define edges
-        # Start with the first analyst
-        workflow.add_edge(START, plan.specs[0].agent_node)
-
-        # Connect analysts in sequence
-        for i, spec in enumerate(plan.specs):
-            current_analyst = spec.agent_node
-            current_tools = spec.tool_node
-            current_clear = spec.clear_node
-
-            # Add conditional edges for current analyst
+        # Define edges.
+        # Analysts are logically independent (each reads only company/date
+        # and calls its own category of tools), so all selected analysts
+        # start together as parallel branches from START, each running its
+        # own ReAct-style tool-calling loop against its own message channel
+        # (agent_states.py), and each converging on the deferred "Bull
+        # Researcher" node once its own loop concludes.
+        for spec in plan.specs:
+            workflow.add_edge(START, spec.agent_node)
             workflow.add_conditional_edges(
-                current_analyst,
+                spec.agent_node,
                 getattr(self.conditional_logic, f"should_continue_{spec.key}"),
-                [current_tools, current_clear],
+                [spec.tool_node, "Bull Researcher"],
             )
-            workflow.add_edge(current_tools, current_analyst)
-
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(plan.specs) - 1:
-                workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
-            else:
-                workflow.add_edge(current_clear, "Bull Researcher")
+            workflow.add_edge(spec.tool_node, spec.agent_node)
 
         # Both research-debate edges share the complete DEBATE_PATH_MAP (#1088).
         for debate_node in ("Bull Researcher", "Bear Researcher"):

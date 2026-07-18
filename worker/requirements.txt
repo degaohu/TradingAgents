@@ -1,4 +1,0 @@
-# Extra deps beyond the main TradingAgents package.
-# The daemon uses stdlib + boto3 for R2 + requests for HTTP.
-boto3>=1.35.0
-requests>=2.32.0

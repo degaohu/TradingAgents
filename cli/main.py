@@ -44,7 +44,6 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.analyst_execution import (
     AnalystWallTimeTracker,
     build_analyst_execution_plan,
-    get_initial_analyst_node,
     sync_analyst_tracker_from_chunk,
 )
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -839,16 +838,20 @@ ANALYST_REPORT_MAP = {
 def update_analyst_statuses(message_buffer, chunk, wall_time_tracker=None):
     """Update analyst statuses based on accumulated report state.
 
+    All selected analysts run as parallel graph branches (graph/setup.py
+    fans out from START to every one of them), so every analyst without a
+    report yet is "in_progress" — not just the first one in plan order,
+    which was the right model back when they ran one at a time.
+
     Logic:
     - Store new report content from the current chunk if present
     - Check accumulated report_sections (not just current chunk) for status
     - Analysts with reports = completed
-    - First analyst without report = in_progress
-    - Remaining analysts without reports = pending
+    - Analysts without reports = in_progress
     - When all analysts done, set Bull Researcher to in_progress
     """
     selected = message_buffer.selected_analysts
-    found_active = False
+    any_still_running = False
 
     if wall_time_tracker is not None:
         sync_analyst_tracker_from_chunk(wall_time_tracker, chunk)
@@ -869,15 +872,13 @@ def update_analyst_statuses(message_buffer, chunk, wall_time_tracker=None):
 
         if has_report:
             message_buffer.update_agent_status(agent_name, "completed")
-        elif not found_active:
-            message_buffer.update_agent_status(agent_name, "in_progress")
-            found_active = True
         else:
-            message_buffer.update_agent_status(agent_name, "pending")
+            message_buffer.update_agent_status(agent_name, "in_progress")
+            any_still_running = True
 
     # When all analysts complete, transition research team to in_progress
     if (
-        not found_active
+        not any_still_running
         and selected
         and message_buffer.agent_status.get("Bull Researcher") == "pending"
     ):
@@ -1085,10 +1086,11 @@ def run_analysis(checkpoint: bool | None = None):
         )
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-        # Update agent status to in_progress for the first analyst
-        first_analyst = get_initial_analyst_node(analyst_execution_plan)
-        message_buffer.update_agent_status(first_analyst, "in_progress")
-        analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
+        # All selected analysts start together as parallel graph branches
+        # (graph/setup.py fans out from START to every one of them).
+        for spec in analyst_execution_plan.specs:
+            message_buffer.update_agent_status(spec.agent_node, "in_progress")
+            analyst_wall_time_tracker.mark_started(spec.key)
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
         # Create spinner text

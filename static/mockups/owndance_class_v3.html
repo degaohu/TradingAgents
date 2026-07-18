@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1440" />
+<title>OwnDance · 班级 / Adult Ballet</title>
+<style>
+  /* -------------------------------------------------------------------
+     OwnDance v3 — 舞蹈教室运营终端
+     Design thesis: 舞蹈是重复的艺术。管理它需要一个 studio-terminal:
+     信息像交易终端那样紧凑, typography 像 Linear 那样克制, 一个
+     "spotlight amber" 作为唯一的高光色, 呼应舞台聚光。
+     ------------------------------------------------------------------- */
+
+  :root {
+    /* Ink & surface — 纸感、暖中性 */
+    --bg:        #FAF9F5;
+    --surface:   #FFFFFF;
+    --surface-2: #F5F3EC;
+    --surface-hover: #F0EDE4;
+    --ink:       #14151A;
+    --ink-2:     #4A4D55;
+    --ink-3:     #83868E;
+    --ink-4:     #B4B6BC;
+    --line:      #ECEAE1;
+    --line-2:    #DCD8CB;
+
+    /* Signal — 舞台聚光琥珀色, 唯一的强调色 */
+    --amber:     #B98029;
+    --amber-tint:#F4E9D3;
+    --amber-ink: #7A5518;
+
+    /* Semantic */
+    --pos:       #2F7D5A;
+    --pos-tint:  #E4EFE7;
+    --warn:      #A96B1E;
+    --neg:       #A73434;
+    --neg-tint:  #F3E3E1;
+
+    /* Type stack — 拉丁 SF, 中文苹方/思源 */
+    --f-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+              "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    --f-disp: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter Display",
+              "PingFang SC", "Noto Sans SC", sans-serif;
+    --f-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+    --r-1: 6px;
+    --r-2: 10px;
+    --r-3: 14px;
+    --shadow-1: 0 1px 0 rgba(20,21,26,.03), 0 1px 2px rgba(20,21,26,.04);
+    --shadow-2: 0 4px 16px -4px rgba(20,21,26,.08), 0 1px 0 rgba(20,21,26,.04);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--f-sans);
+    font-feature-settings: "ss01","cv11","tnum";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color: var(--ink);
+    background: var(--bg);
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+  }
+  ::selection { background: var(--amber-tint); color: var(--amber-ink); }
+
+  /* --- App shell ------------------------------------------------ */
+
+  .app {
+    display: grid;
+    grid-template-columns: 208px 328px 1fr;
+    grid-template-rows: 48px 1fr;
+    height: 100vh;
+  }
+
+  /* -------- Top bar (spans all) ---------------------------------- */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    background: rgba(250,249,245,.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--line);
+    z-index: 5;
+  }
+  .brand {
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--f-disp);
+    letter-spacing: -0.02em;
+  }
+  .brand-mark {
+    width: 22px; height: 22px;
+    background: var(--ink);
+    border-radius: 6px;
+    position: relative;
+    align-self: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 -1px 0 rgba(255,255,255,.08), 0 1px 2px rgba(20,21,26,.15);
+  }
+  .brand-mark::after {
+    content: ""; width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 0 1.5px rgba(185,128,41,.25);
+  }
+  .brand-name { font-weight: 600; font-size: 14px; }
+  .brand-ver  { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .crumbs {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--ink-3);
+    margin-left: 4px;
+  }
+  .crumbs .sep { color: var(--ink-4); }
+  .crumbs .cur { color: var(--ink); font-weight: 500; }
+
+  .search {
+    flex: 1; max-width: 520px;
+    display: flex; align-items: center; gap: 8px;
+    height: 30px; padding: 0 10px 0 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-2);
+    color: var(--ink-3);
+    font-size: 12.5px;
+    box-shadow: var(--shadow-1);
+  }
+  .search:hover { border-color: var(--line-2); }
+  .search .kbd {
+    margin-left: auto;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface-2);
+  }
+
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .iconbtn {
+    width: 30px; height: 30px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: var(--ink-2);
+    cursor: pointer;
+  }
+  .iconbtn:hover { background: var(--surface-2); }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: linear-gradient(135deg, #C89B3C 0%, #7A5518 100%);
+    color: #fff; font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 6px;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px rgba(20,21,26,.08);
+  }
+
+  /* -------- Left nav -------------------------------------------- */
+  .nav {
+    padding: 10px 8px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    gap: 2px;
+  }
+  .nav-section {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--ink-4);
+    padding: 12px 10px 6px;
+    font-weight: 600;
+  }
+  .nav a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 450;
+    position: relative;
+  }
+  .nav a:hover { background: var(--surface-2); color: var(--ink); }
+  .nav a.active {
+    background: var(--surface);
+    color: var(--ink);
+    font-weight: 550;
+    box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line);
+  }
+  .nav a.active::before {
+    content:""; position: absolute; left: -8px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--amber); border-radius: 2px;
+  }
+  .nav svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .9; }
+  .nav .count {
+    margin-left: auto; font-size: 11px; font-family: var(--f-mono);
+    color: var(--ink-3); font-variant-numeric: tabular-nums;
+  }
+  .nav a.active .count { color: var(--amber); }
+
+  .nav-foot {
+    margin-top: auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 3px var(--pos-tint); }
+
+  /* -------- Middle column: class list --------------------------- */
+  .list-col {
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .list-head {
+    position: sticky; top: 0; z-index: 3;
+    padding: 14px 16px 10px;
+    background: linear-gradient(var(--bg) 80%, rgba(250,249,245,0));
+  }
+  .list-head-row1 {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px;
+  }
+  .list-title {
+    font-family: var(--f-disp);
+    font-size: 17px; font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  .list-count {
+    font-size: 11.5px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .list-actions { margin-left: auto; display: flex; gap: 6px; }
+  .btn {
+    height: 26px; padding: 0 10px;
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2);
+    font: 500 12px/1 var(--f-sans);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--surface-hover); color: var(--ink); }
+  .btn-primary {
+    background: var(--ink); color: #fff; border-color: var(--ink);
+    box-shadow: 0 1px 2px rgba(20,21,26,.2);
+  }
+  .btn-primary:hover { background: #2A2C33; color: #fff; }
+  .btn.amber { color: var(--amber-ink); border-color: var(--amber-tint); background: var(--amber-tint); }
+
+  .filter-row {
+    display: flex; gap: 4px; margin-top: 4px;
+  }
+  .pill {
+    padding: 4px 9px;
+    font-size: 11.5px; font-weight: 500;
+    color: var(--ink-2);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .pill:hover { background: var(--surface-2); }
+  .pill.on { background: var(--ink); color: #fff; }
+  .pill .n { opacity: .55; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+  .list-search {
+    display: flex; align-items: center; gap: 8px;
+    height: 28px; padding: 0 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 12px; color: var(--ink-3);
+    margin: 6px 0 2px;
+  }
+
+  /* class rows */
+  .class-list { padding: 4px 8px 24px; }
+  .class-group-label {
+    padding: 12px 8px 6px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--ink-4);
+    font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .class-group-label::after {
+    content: ""; flex: 1; height: 1px; background: var(--line);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 3px 1fr auto;
+    gap: 10px;
+    padding: 10px 10px 10px 6px;
+    border-radius: 9px;
+    cursor: pointer;
+    position: relative;
+    margin-bottom: 1px;
+  }
+  .row:hover { background: var(--surface-2); }
+  .row.selected {
+    background: var(--surface);
+    box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line);
+  }
+  .row-tag {
+    background: var(--ink-4); border-radius: 2px;
+  }
+  .row[data-tint="ballet"]   .row-tag { background: #B98029; }
+  .row[data-tint="rad-g1"]   .row-tag { background: #5E8A6E; }
+  .row[data-tint="rad-g2"]   .row-tag { background: #7A6F9B; }
+  .row[data-tint="rad-g5"]   .row-tag { background: #A75B4A; }
+  .row[data-tint="rad-pre"]  .row-tag { background: #C4995C; }
+  .row[data-tint="rad-pri"]  .row-tag { background: #5A7DA0; }
+  .row[data-tint="chinese"]  .row-tag { background: #9B4A5C; }
+  .row[data-tint="jazz"]     .row-tag { background: #4A6A8B; }
+  .row[data-tint="chinese2"] .row-tag { background: #B36A38; }
+
+  .row-body { min-width: 0; }
+  .row-title {
+    display: flex; align-items: baseline; gap: 6px;
+    font-size: 13px; font-weight: 550;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row-title .glyph { color: var(--ink-4); font-size: 12px; }
+  .row-meta {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  .row-meta .code { font-family: var(--f-mono); font-size: 11px; }
+  .row-meta .dot { color: var(--ink-4); }
+  .row-meta .course { color: var(--ink-2); }
+
+  .row-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .cap {
+    display: flex; align-items: baseline; gap: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cap .n { font-size: 13px; font-weight: 600; color: var(--ink); font-family: var(--f-mono); }
+  .cap .d { font-size: 11px; color: var(--ink-3); font-family: var(--f-mono); }
+  .cap-bar {
+    width: 44px; height: 3px;
+    background: var(--line);
+    border-radius: 2px; overflow: hidden;
+    display: flex;
+  }
+  .cap-bar > i { background: var(--ink); display: block; height: 100%; }
+  .row.selected .cap-bar > i,
+  .row:hover .cap-bar > i { background: var(--amber); }
+
+  .list-foot {
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 11.5px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .list-foot a { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line-2); }
+
+  /* -------- Detail column --------------------------------------- */
+  .detail {
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  /* Detail header — 密集但呼吸感 */
+  .d-head {
+    position: sticky; top: 0;
+    background: rgba(250,249,245,.86);
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 22px 12px;
+    z-index: 2;
+  }
+  .d-head-row {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .d-swatch {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: linear-gradient(160deg, #C89B3C, #7A5518);
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--f-disp); font-weight: 600; font-size: 15px;
+    letter-spacing: -0.02em;
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,.15), 0 1px 2px rgba(20,21,26,.15);
+  }
+  .d-title-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .d-title {
+    font-family: var(--f-disp);
+    font-size: 20px; font-weight: 600;
+    letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px;
+    font-size: 10.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+    border-radius: 4px;
+  }
+  .badge .b-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .badge.pos { background: var(--pos-tint); color: var(--pos); }
+  .badge.pos .b-dot { background: var(--pos); box-shadow: 0 0 0 2px rgba(47,125,90,.15); }
+  .badge.warn { background: #FBEFDA; color: var(--warn); }
+  .badge.warn .b-dot { background: var(--warn); }
+  .badge.neg  { background: var(--neg-tint); color: var(--neg); }
+
+  .d-sub {
+    font-size: 11.5px; color: var(--ink-3);
+    font-family: var(--f-mono);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .d-sub .sep { color: var(--ink-4); }
+  .d-sub .course-name { font-family: var(--f-sans); color: var(--ink-2); }
+
+  .d-head-actions { margin-left: auto; display: flex; gap: 6px; }
+
+  /* Stat strip: dense KPI row, tabular */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    margin-top: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+  }
+  .kpi {
+    padding: 12px 14px 12px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid var(--line);
+    min-width: 0;
+  }
+  .kpi:last-child { border-right: 0; }
+  .kpi-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--ink-3); font-weight: 600;
+  }
+  .kpi-value {
+    font-family: var(--f-disp);
+    font-size: 22px; font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    display: flex; align-items: baseline; gap: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-value .unit { font-size: 11px; color: var(--ink-3); font-weight: 500; font-family: var(--f-sans); }
+  .kpi-hint {
+    font-size: 11px; color: var(--ink-3);
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-hint .delta.pos { color: var(--pos); }
+  .kpi-hint .delta.neg { color: var(--neg); }
+
+  /* Capacity bar with individual tick marks */
+  .cap-viz {
+    display: flex; gap: 3px; height: 5px; margin-top: 2px;
+  }
+  .cap-viz .tick {
+    flex: 1; background: var(--line); border-radius: 2px;
+  }
+  .cap-viz .tick.filled { background: var(--ink); }
+  .cap-viz .tick.filled.a { background: var(--amber); }
+
+  /* Content grid — 2-column dashboard */
+  .d-body {
+    padding: 16px 22px 32px;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 14px;
+  }
+  .d-body .full { grid-column: 1 / -1; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+  }
+  .card-h {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 14px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .card-h-title {
+    font-size: 12px; font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .card-h .meta {
+    font-size: 11px; color: var(--ink-3);
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+  .card-h .right { margin-left: auto; display: flex; gap: 6px; }
+  .link {
+    color: var(--ink-2); font-size: 11.5px; font-weight: 500;
+    text-decoration: none; cursor: pointer;
+    padding: 3px 6px; border-radius: 5px;
+  }
+  .link:hover { background: var(--surface-2); color: var(--ink); }
+  .link.amber { color: var(--amber-ink); }
+
+  /* Signature element — attendance sparkline
+     每一次课节 = 一列条形, 高度=出勤率. 舞蹈是重复的艺术, 让重复本身可读. */
+  .spark {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 22px;
+  }
+  .spark .b {
+    width: 4px; background: var(--ink-4); border-radius: 1px;
+    opacity: .55;
+  }
+  .spark .b.full   { background: var(--ink); opacity: 1; }
+  .spark .b.high   { background: var(--ink); opacity: .8; }
+  .spark .b.mid    { background: var(--ink-3); opacity: .7; }
+  .spark .b.low    { background: var(--neg); opacity: .7; }
+  .spark .b.miss   { background: var(--line-2); opacity: 1; height: 3px !important; }
+  .spark .b.future { background: transparent; border: 1px dashed var(--line-2); border-radius: 1px; }
+
+  /* Roster table */
+  .roster {}
+  .r-row {
+    display: grid;
+    grid-template-columns: 26px 1fr 96px 44px 20px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+  }
+  .r-row:last-child { border-bottom: 0; }
+  .r-row:hover { background: var(--surface-2); }
+  .r-ava {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 600; color: #fff;
+    letter-spacing: -0.01em;
+  }
+  .r-ava.a { background: linear-gradient(135deg, #7A5518, #B98029); }
+  .r-ava.b { background: linear-gradient(135deg, #2E4A6B, #5A7DA0); }
+  .r-ava.c { background: linear-gradient(135deg, #5E8A6E, #3E5F4E); }
+  .r-ava.d { background: linear-gradient(135deg, #7A6F9B, #4E4670); }
+  .r-ava.e { background: linear-gradient(135deg, #A75B4A, #7A4033); }
+  .r-name { min-width: 0; }
+  .r-name .n { font-weight: 550; color: var(--ink); letter-spacing: -0.003em; }
+  .r-name .id { font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+  .r-att {
+    display: flex; align-items: center; gap: 6px;
+    font-variant-numeric: tabular-nums; font-family: var(--f-mono);
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .r-att-bar {
+    flex: 1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden;
+  }
+  .r-att-bar > i { display: block; height: 100%; background: var(--ink); }
+  .r-progress {
+    text-align: right;
+    font-family: var(--f-mono); font-size: 11.5px;
+    color: var(--ink-2); font-variant-numeric: tabular-nums;
+  }
+  .r-progress .frac { color: var(--ink); font-weight: 550; }
+  .caret { color: var(--ink-4); font-size: 11px; }
+
+  .empty-slot {
+    display: grid;
+    grid-template-columns: 26px 1fr 96px 44px 20px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    color: var(--ink-4);
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .empty-slot:last-child { border-bottom: 0; }
+  .empty-slot .slot-avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 1px dashed var(--line-2);
+  }
+  .empty-slot .slot-cta {
+    color: var(--amber-ink); font-weight: 500;
+  }
+
+  /* Sessions list */
+  .sessions {}
+  .s-row {
+    display: grid;
+    grid-template-columns: 42px 1fr 84px 68px 60px;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .s-row:last-child { border-bottom: 0; }
+  .s-row:hover { background: var(--surface-2); }
+  .s-date {
+    font-family: var(--f-mono); font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+  .s-date .m { display: block; font-size: 9.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+  .s-date .d { display: block; font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+  .s-when {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .s-when .w { font-weight: 550; color: var(--ink); font-size: 12.5px; }
+  .s-when .t { font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); }
+  .s-att {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--f-mono); font-variant-numeric: tabular-nums;
+    font-size: 12px; color: var(--ink-2);
+    justify-self: end;
+  }
+  .s-att-mini {
+    width: 44px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden;
+  }
+  .s-att-mini > i { display: block; height: 100%; background: var(--ink); }
+
+  .s-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 500;
+    padding: 3px 7px;
+    border-radius: 5px;
+    justify-self: end;
+  }
+  .s-status.done { color: var(--pos); background: var(--pos-tint); }
+  .s-status.wait { color: var(--warn); background: #FBEFDA; }
+  .s-status.today { color: var(--amber-ink); background: var(--amber-tint); }
+  .s-status .dt { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  .s-chev { color: var(--ink-4); text-align: right; font-size: 11px; }
+
+  /* Divider row for grouping today */
+  .s-divider {
+    padding: 8px 14px 6px;
+    font-size: 10.5px;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    font-weight: 600;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .s-divider .n { color: var(--ink-4); font-family: var(--f-mono); font-weight: 500; letter-spacing: 0; }
+
+  /* Cards side (right column) — meta stack */
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Info rows */
+  .info {
+    display: grid; grid-template-columns: 88px 1fr;
+    gap: 4px 12px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+  }
+  .info .k {
+    color: var(--ink-3); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .09em; font-weight: 600;
+    align-self: center;
+  }
+  .info .v { color: var(--ink); font-weight: 500; }
+  .info-row { display: contents; }
+  .info-row + .info-row .k,
+  .info-row + .info-row .v {
+    padding-top: 8px; margin-top: 4px; border-top: 1px dashed var(--line);
+  }
+
+  /* Cards chips */
+  .chip-list {
+    padding: 12px 14px;
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    font-size: 11.5px; font-weight: 500;
+    color: var(--ink-2);
+  }
+  .chip .cdot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+  .chip[data-t="1"] .cdot { background: #B98029; }
+  .chip[data-t="2"] .cdot { background: #5A7DA0; }
+  .chip[data-t="3"] .cdot { background: #5E8A6E; }
+  .chip[data-t="4"] .cdot { background: #A75B4A; }
+  .chip .n { font-family: var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .chip.new { border-style: dashed; color: var(--ink-3); }
+
+  /* Consumption legend / bar */
+  .consump {
+    padding: 12px 14px 14px;
+  }
+  .consump-bar {
+    height: 8px; border-radius: 4px; overflow: hidden;
+    display: flex; background: var(--line);
+    box-shadow: inset 0 0 0 1px rgba(20,21,26,.02);
+  }
+  .consump-bar > i { display: block; height: 100%; }
+  .consump-legend {
+    margin-top: 10px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px;
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .consump-legend .li {
+    display: flex; align-items: center; gap: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .consump-legend .sw {
+    width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  }
+  .consump-legend .num {
+    margin-left: auto; font-family: var(--f-mono); font-size: 11px; color: var(--ink);
+  }
+  .consump-legend .pct { color: var(--ink-3); font-size: 10.5px; margin-left: 4px; }
+
+  /* Attendance sparkline card body */
+  .sparkline-body {
+    padding: 12px 14px 14px;
+    display: flex; align-items: flex-end; gap: 14px;
+  }
+  .sparkline-body .spark { flex: 1; height: 40px; }
+  .sparkline-body .spark .b { width: 5px; }
+  .sparkline-legend {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 10.5px; color: var(--ink-3);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .sparkline-legend .num {
+    font-family: var(--f-disp); font-size: 22px; font-weight: 600;
+    color: var(--ink); letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .sparkline-legend .sub { font-family: var(--f-mono); font-size: 11px; }
+
+  /* Utility icons */
+  .i-16 { width: 14px; height: 14px; }
+  svg { display: block; }
+
+  /* Scrollbars — hairline, hovered */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+  .list-col:hover ::-webkit-scrollbar-thumb,
+  .detail:hover ::-webkit-scrollbar-thumb { background: rgba(20,21,26,.15); }
+
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============================================================
+       TOP BAR
+       ============================================================ -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <span class="brand-name">OwnDance</span>
+        <span class="brand-ver">v0.4.95</span>
+      </div>
+    </div>
+    <div class="crumbs">
+      <span>工作台</span><span class="sep">/</span>
+      <span>班级</span><span class="sep">/</span>
+      <span class="cur">Adult Ballet</span>
+    </div>
+    <div class="search" style="margin-left:16px">
+      <svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+      </svg>
+      <span>搜索学生、班级、发票、卡种、课节…</span>
+      <span class="kbd">⌘K</span>
+    </div>
+    <div class="top-right">
+      <div class="iconbtn" title="通知">
+        <svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 6.5a4 4 0 118 0v2l1 2H3l1-2v-2z"/><path d="M6.5 12.5a1.5 1.5 0 003 0"/>
+        </svg>
+      </div>
+      <div class="iconbtn" title="主题">
+        <svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3"/>
+        </svg>
+      </div>
+      <div class="avatar">A</div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       LEFT NAV
+       ============================================================ -->
+  <nav class="nav">
+    <div class="nav-section">运营</div>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v6a1 1 0 01-1 1H3a1 1 0 01-1-1V7z"/><path d="M6 14V9h4v5"/></svg>
+      首页
+    </a>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v2M10.5 2v2"/></svg>
+      日历 <span class="count">今 6</span>
+    </a>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="2.5"/><path d="M3 13c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>
+      学生 <span class="count">218</span>
+    </a>
+    <a class="active">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 5l5.5-2.5L13.5 5 8 7.5 2.5 5z"/><path d="M4.5 6.5V10c0 1 1.5 2 3.5 2s3.5-1 3.5-2V6.5"/></svg>
+      班级 <span class="count">13</span>
+    </a>
+
+    <div class="nav-section">财务</div>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="8" rx="1"/><path d="M2.5 7.5h11M5.5 10h2"/></svg>
+      财务 <span class="count">¥ 218K</span>
+    </a>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="8" rx="1.2"/><path d="M4.5 8h7M4.5 10h4"/></svg>
+      卡种 <span class="count">7</span>
+    </a>
+
+    <div class="nav-section">组织</div>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="6" r="2"/><circle cx="10.5" cy="6" r="2"/><path d="M1.5 13c.5-2 2-3 4-3M14.5 13c-.5-2-2-3-4-3"/></svg>
+      团队
+    </a>
+    <a>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M4 12l1.4-1.4M10.6 5.4L12 4"/></svg>
+      设置
+    </a>
+
+    <div class="nav-foot">
+      <span class="status-dot"></span>
+      <span>Icecy · 大教室在线</span>
+    </div>
+  </nav>
+
+  <!-- ============================================================
+       LIST COLUMN
+       ============================================================ -->
+  <section class="list-col">
+    <div class="list-head">
+      <div class="list-head-row1">
+        <div class="list-title">班级</div>
+        <div class="list-count">13 活跃 · 40 已结束</div>
+        <div class="list-actions">
+          <button class="btn"><svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10M4.5 6.5h7M6 10h4M7 13.5h2"/></svg>按节</button>
+          <button class="btn btn-primary"><svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 3v10M3 8h10"/></svg>新建</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="pill on">活跃<span class="n">13</span></div>
+        <div class="pill">已结束<span class="n">40</span></div>
+        <div class="pill">停用<span class="n">2</span></div>
+        <div class="pill">归档<span class="n">28</span></div>
+      </div>
+      <div class="list-search">
+        <svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+        </svg>
+        搜索班级名称、编号…
+      </div>
+    </div>
+
+    <div class="class-list">
+      <div class="class-group-label">周二 · 4</div>
+
+      <div class="row selected" data-tint="ballet">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Adult Ballet <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">ADU-TM-260631</span>
+            <span class="dot">·</span>
+            <span class="course">Adult Classes</span>
+            <span class="dot">·</span>
+            <span>周二 / 周五 10:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">5</span><span class="d">/10</span></div>
+          <div class="cap-bar"><i style="width:50%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="rad-g1">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Ballet RAD G1 <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">BAL-TM-260775</span>
+            <span class="dot">·</span>
+            <span class="course">Ballet RAD G1</span>
+            <span class="dot">·</span>
+            <span>周二 16:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">7</span><span class="d">/8</span></div>
+          <div class="cap-bar"><i style="width:87%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="rad-g2">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Ballet RAD G2 <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">BAL-TM-260735</span>
+            <span class="dot">·</span>
+            <span class="course">Ballet RAD G2</span>
+            <span class="dot">·</span>
+            <span>周二 17:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">4</span><span class="d">/8</span></div>
+          <div class="cap-bar"><i style="width:50%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="rad-g5">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Ballet RAD G5 <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">BAL-TM-260668</span>
+            <span class="dot">·</span>
+            <span class="course">Ballet RAD G5</span>
+            <span class="dot">·</span>
+            <span>周二 19:00</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">4</span><span class="d">/6</span></div>
+          <div class="cap-bar"><i style="width:66%"></i></div>
+        </div>
+      </div>
+
+      <div class="class-group-label">周三 · 3</div>
+
+      <div class="row" data-tint="rad-pre">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Ballet RAD Pre-… <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">BAL-TM-260734</span>
+            <span class="dot">·</span>
+            <span class="course">Ballet RAD Pre-primary</span>
+            <span class="dot">·</span>
+            <span>周三 15:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">7</span><span class="d">/8</span></div>
+          <div class="cap-bar"><i style="width:87%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="rad-pri">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Ballet RAD Pri… <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">BAL-TM-260705</span>
+            <span class="dot">·</span>
+            <span class="course">Ballet RAD Primary</span>
+            <span class="dot">·</span>
+            <span>周三 16:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">4</span><span class="d">/6</span></div>
+          <div class="cap-bar"><i style="width:66%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="chinese">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Chinese Dance … <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">CHI-TM-260779</span>
+            <span class="dot">·</span>
+            <span class="course">Chinese Dance Level 3</span>
+            <span class="dot">·</span>
+            <span>周三 18:30</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">4</span><span class="d">/8</span></div>
+          <div class="cap-bar"><i style="width:50%"></i></div>
+        </div>
+      </div>
+
+      <div class="class-group-label">周四 · 3</div>
+
+      <div class="row" data-tint="jazz">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Chinese Jazz A… <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">ADU-TM-260218</span>
+            <span class="dot">·</span>
+            <span class="course">Adult Classes</span>
+            <span class="dot">·</span>
+            <span>周四 20:00</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">3</span><span class="d">/10</span></div>
+          <div class="cap-bar"><i style="width:30%"></i></div>
+        </div>
+      </div>
+
+      <div class="row" data-tint="chinese2">
+        <div class="row-tag"></div>
+        <div class="row-body">
+          <div class="row-title">Chinese Level 4 <span class="glyph">📖</span></div>
+          <div class="row-meta">
+            <span class="code">CHI-TM-260739</span>
+            <span class="dot">·</span>
+            <span class="course">Chinese Dance Level 4</span>
+            <span class="dot">·</span>
+            <span>周四 18:00</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <div class="cap"><span class="n">4</span><span class="d">/8</span></div>
+          <div class="cap-bar"><i style="width:50%"></i></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="list-foot">
+      还有 <b style="color:var(--ink)">40</b> 个已结束班级 · <a>显示全部</a>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       DETAIL COLUMN
+       ============================================================ -->
+  <main class="detail">
+
+    <!-- Header -->
+    <div class="d-head">
+      <div class="d-head-row">
+        <div class="d-swatch">AB</div>
+        <div class="d-title-block">
+          <div class="d-title">
+            Adult Ballet
+            <span class="badge pos"><span class="b-dot"></span>活跃</span>
+          </div>
+          <div class="d-sub">
+            <span>#ADU-TM-260631</span>
+            <span class="sep">·</span>
+            <span class="course-name">Adult Classes</span>
+            <span class="sep">·</span>
+            <span>周二 · 周五 · 10:30–12:00</span>
+            <span class="sep">·</span>
+            <span>Icecy · 大教室</span>
+          </div>
+        </div>
+        <div class="d-head-actions">
+          <button class="btn"><svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>添加学生</button>
+          <button class="btn"><svg class="i-16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3v10M12 3v10M4 6h8M4 10h8"/></svg>课节</button>
+          <button class="btn amber">点击考勤</button>
+          <button class="btn" style="width:26px;padding:0;justify-content:center">
+            <svg class="i-16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="kpi-strip">
+        <div class="kpi">
+          <div class="kpi-label">在册 / 容量</div>
+          <div class="kpi-value">5<span class="unit">/10</span></div>
+          <div class="cap-viz">
+            <span class="tick filled a"></span>
+            <span class="tick filled a"></span>
+            <span class="tick filled a"></span>
+            <span class="tick filled a"></span>
+            <span class="tick filled a"></span>
+            <span class="tick"></span>
+            <span class="tick"></span>
+            <span class="tick"></span>
+            <span class="tick"></span>
+            <span class="tick"></span>
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-label">已排课节</div>
+          <div class="kpi-value">33</div>
+          <div class="kpi-hint">已完成 11 · 待上 22</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-label">下一节课</div>
+          <div class="kpi-value">7·14<span class="unit">10:30</span></div>
+          <div class="kpi-hint">明天 · 周一 · 距今 22 时</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-label">平均出勤</div>
+          <div class="kpi-value">86<span class="unit">%</span></div>
+          <div class="kpi-hint"><span class="delta pos">▲ 4.2%</span> vs 上月</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-label">卡消耗 · 30 天</div>
+          <div class="kpi-value">42<span class="unit">课时</span></div>
+          <div class="kpi-hint">¥ 4,280 · <span class="delta pos">▲ 12</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="d-body">
+
+      <!-- LEFT COLUMN --------------------------------------------- -->
+
+      <div class="card">
+        <div class="card-h">
+          <div class="card-h-title">花名册</div>
+          <span class="meta">5 / 10 席位 · 5 空缺</span>
+          <div class="right">
+            <a class="link">按签到排序</a>
+            <a class="link amber">添加学生</a>
+          </div>
+        </div>
+        <div class="roster">
+
+          <div class="r-row">
+            <div class="r-ava a">Y</div>
+            <div class="r-name">
+              <div class="n">yao wu</div>
+              <div class="id">#2026000033 · 成人20节课卡</div>
+            </div>
+            <div class="r-att">
+              <div class="r-att-bar"><i style="width:0%"></i></div>
+            </div>
+            <div class="r-progress"><span class="frac">0</span>/33</div>
+            <div class="caret">›</div>
+          </div>
+
+          <div class="r-row">
+            <div class="r-ava b">C</div>
+            <div class="r-name">
+              <div class="n">Cindy</div>
+              <div class="id">#2026000032 · 成人五节课</div>
+            </div>
+            <div class="r-att">
+              <div class="r-att-bar"><i style="width:0%"></i></div>
+            </div>
+            <div class="r-progress"><span class="frac">0</span>/33</div>
+            <div class="caret">›</div>
+          </div>
+
+          <div class="r-row">
+            <div class="r-ava c">I</div>
+            <div class="r-name">
+              <div class="n">Ivy Jin</div>
+              <div class="id">#2026000009 · 成人班 10 节课卡</div>
+            </div>
+            <div class="r-att">
+              <div class="r-att-bar"><i style="width:0%"></i></div>
+            </div>
+            <div class="r-progress"><span class="frac">0</span>/33</div>
+            <div class="caret">›</div>
+          </div>
+
+          <div class="r-row">
+            <div class="r-ava d">T</div>
+            <div class="r-name">
+              <div class="n">Tina Xue</div>
+              <div class="id">#2026000010 · Drop In 卡</div>
+            </div>
+            <div class="r-att">
+              <div class="r-att-bar"><i style="width:0%"></i></div>
+            </div>
+            <div class="r-progress"><span class="frac">0</span>/33</div>
+            <div class="caret">›</div>
+          </div>
+
+          <div class="r-row">
+            <div class="r-ava e">Q</div>
+            <div class="r-name">
+              <div class="n">Qian Deng</div>
+              <div class="id">#2026000015 · 成人五节课</div>
+            </div>
+            <div class="r-att">
+              <div class="r-att-bar"><i style="width:0%"></i></div>
+            </div>
+            <div class="r-progress"><span class="frac">0</span>/33</div>
+            <div class="caret">›</div>
+          </div>
+
+          <div class="empty-slot">
+            <div class="slot-avatar"></div>
+            <div>空缺席位 · <span class="slot-cta">邀请学生加入</span></div>
+            <div></div><div></div><div></div>
+          </div>
+          <div class="empty-slot">
+            <div class="slot-avatar"></div>
+            <div>空缺席位 · <span class="slot-cta">邀请学生加入</span></div>
+            <div></div><div></div><div></div>
+          </div>
+          <div class="empty-slot">
+            <div class="slot-avatar"></div>
+            <div>空缺席位 (+3) · 半价开放</div>
+            <div></div><div></div><div></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Sparkline signature card -->
+      <div class="card">
+        <div class="card-h">
+          <div class="card-h-title">出勤脉动</div>
+          <span class="meta">33 节 · 每列一节 · 高度 = 出勤率</span>
+          <div class="right">
+            <a class="link">6 月</a>
+            <a class="link">全周期</a>
+          </div>
+        </div>
+        <div class="sparkline-body">
+          <div class="spark">
+            <!-- 11 completed sessions, then 22 future -->
+            <span class="b full"   style="height:100%"></span>
+            <span class="b full"   style="height:100%"></span>
+            <span class="b high"   style="height:80%"></span>
+            <span class="b full"   style="height:100%"></span>
+            <span class="b high"   style="height:80%"></span>
+            <span class="b low"    style="height:40%"></span>
+            <span class="b full"   style="height:100%"></span>
+            <span class="b full"   style="height:100%"></span>
+            <span class="b mid"    style="height:60%"></span>
+            <span class="b high"   style="height:80%"></span>
+            <span class="b full"   style="height:100%"></span>
+            <!-- future -->
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+            <span class="b future" style="height:100%"></span>
+          </div>
+          <div class="sparkline-legend">
+            <div class="num">86%</div>
+            <div>近 11 节均</div>
+            <div class="sub">峰 5/5 · 谷 2/5</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div class="card full">
+        <div class="card-h">
+          <div class="card-h-title">课节</div>
+          <span class="meta">11 历史 · 22 待上 · 共 33 节</span>
+          <div class="right">
+            <a class="link">今天</a>
+            <a class="link">导出 .csv</a>
+            <a class="link amber">批量考勤</a>
+          </div>
+        </div>
+
+        <div class="s-divider">即将开始 <span class="n">· 5 节</span></div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">7·14</span><span class="d">一</span></div>
+          <div class="s-when"><span class="w">明天 · 周一</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:0%"></i></div>
+            0/5
+          </div>
+          <div><span class="s-status today"><span class="dt"></span>下一节</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">7·15</span><span class="d">二</span></div>
+          <div class="s-when"><span class="w">周二</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:0%"></i></div>
+            0/5
+          </div>
+          <div><span class="s-status wait"><span class="dt"></span>待开始</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">7·18</span><span class="d">五</span></div>
+          <div class="s-when"><span class="w">周五</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:0%"></i></div>
+            0/5
+          </div>
+          <div><span class="s-status wait"><span class="dt"></span>待开始</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-divider">已完成 <span class="n">· 11 节 · 平均 86%</span></div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">6·19</span><span class="d">五</span></div>
+          <div class="s-when"><span class="w">周五</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:40%"></i></div>
+            2/5
+          </div>
+          <div><span class="s-status done"><span class="dt"></span>已完成</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">6·16</span><span class="d">一</span></div>
+          <div class="s-when"><span class="w">周一 · 补课</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:60%"></i></div>
+            3/5
+          </div>
+          <div><span class="s-status done"><span class="dt"></span>已完成</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">6·12</span><span class="d">五</span></div>
+          <div class="s-when"><span class="w">周五</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:40%"></i></div>
+            2/5
+          </div>
+          <div><span class="s-status done"><span class="dt"></span>已完成</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">6·9</span><span class="d">二</span></div>
+          <div class="s-when"><span class="w">周二</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:20%"></i></div>
+            1/5
+          </div>
+          <div><span class="s-status done"><span class="dt"></span>已完成</span></div>
+          <div class="s-chev">›</div>
+        </div>
+
+        <div class="s-row">
+          <div class="s-date"><span class="m">6·5</span><span class="d">五</span></div>
+          <div class="s-when"><span class="w">周五</span><span class="t">10:30 – 12:00</span></div>
+          <div class="s-att">
+            <div class="s-att-mini"><i style="width:60%"></i></div>
+            3/5
+          </div>
+          <div><span class="s-status done"><span class="dt"></span>已完成</span></div>
+          <div class="s-chev">›</div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN — stacked meta cards --------------------- -->
+
+      <div class="stack" style="grid-column:2; grid-row:1 / span 3; align-self:start;">
+
+        <div class="card">
+          <div class="card-h">
+            <div class="card-h-title">教师与场地</div>
+            <div class="right"><a class="link">调整</a></div>
+          </div>
+          <div class="info">
+            <div class="info-row"><span class="k">主讲</span><span class="v">Icecy · 芭蕾 · 皇家舞蹈学院 RAD 认证</span></div>
+            <div class="info-row"><span class="k">助教</span><span class="v">— <span style="color:var(--ink-3);font-weight:400">未安排</span></span></div>
+            <div class="info-row"><span class="k">教室</span><span class="v">大教室 · 4 号 · 60 m²</span></div>
+            <div class="info-row"><span class="k">周期</span><span class="v" style="font-family:var(--f-mono);font-variant-numeric:tabular-nums">2026·05·13 → 2026·10·31</span></div>
+            <div class="info-row"><span class="k">时长</span><span class="v">90 分钟 · 每周 2 节</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">
+            <div class="card-h-title">可用卡种</div>
+            <span class="meta">只接受指定卡种</span>
+            <div class="right"><a class="link">编辑</a></div>
+          </div>
+          <div class="chip-list">
+            <span class="chip" data-t="1"><span class="cdot"></span>Drop In 卡 <span class="n">¥ 180</span></span>
+            <span class="chip" data-t="2"><span class="cdot"></span>成人 20 节课卡 <span class="n">¥ 3,200</span></span>
+            <span class="chip" data-t="3"><span class="cdot"></span>成人五节课 <span class="n">¥ 900</span></span>
+            <span class="chip" data-t="4"><span class="cdot"></span>成人班 10 节课卡 <span class="n">¥ 1,700</span></span>
+            <span class="chip new">+ 添加</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">
+            <div class="card-h-title">卡消费构成</div>
+            <span class="meta">近 30 天 · 42 课时</span>
+            <div class="right"><a class="link">明细</a></div>
+          </div>
+          <div class="consump">
+            <div class="consump-bar">
+              <i style="width:47%;background:#B98029"></i>
+              <i style="width:26%;background:#5A7DA0"></i>
+              <i style="width:16%;background:#5E8A6E"></i>
+              <i style="width:11%;background:#A75B4A"></i>
+            </div>
+            <div class="consump-legend">
+              <div class="li"><span class="sw" style="background:#B98029"></span>成人 20 节 <span class="num">20 <span class="pct">47%</span></span></div>
+              <div class="li"><span class="sw" style="background:#5A7DA0"></span>Drop In <span class="num">11 <span class="pct">26%</span></span></div>
+              <div class="li"><span class="sw" style="background:#5E8A6E"></span>五节课 <span class="num">7 <span class="pct">16%</span></span></div>
+              <div class="li"><span class="sw" style="background:#A75B4A"></span>10 节课 <span class="num">4 <span class="pct">11%</span></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">
+            <div class="card-h-title">活动日志</div>
+            <div class="right"><a class="link">全部</a></div>
+          </div>
+          <div style="padding:6px 0 6px;">
+            <div style="display:grid;grid-template-columns:64px 1fr;gap:8px 12px;padding:8px 14px;font-size:12px;">
+              <div style="font-family:var(--f-mono);color:var(--ink-3);font-size:11px">2 时前</div>
+              <div><b style="font-weight:550">Icecy</b> <span style="color:var(--ink-3)">添加了课节</span> · 7·18 周五</div>
+
+              <div style="font-family:var(--f-mono);color:var(--ink-3);font-size:11px">昨天</div>
+              <div><b style="font-weight:550">Qian Deng</b> <span style="color:var(--ink-3)">加入班级</span> · 由 成人五节课</div>
+
+              <div style="font-family:var(--f-mono);color:var(--ink-3);font-size:11px">3 天前</div>
+              <div><span style="color:var(--ink-3)">课节考勤已提交</span> · 6·19 周五 · 2/5</div>
+
+              <div style="font-family:var(--f-mono);color:var(--ink-3);font-size:11px">6·5</div>
+              <div><span style="color:var(--ink-3)">班级</span> <b style="font-weight:550">Adult Ballet</b> <span style="color:var(--ink-3)">创建</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

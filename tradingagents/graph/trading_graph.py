@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
 
+from .analyst_execution import ANALYST_NODE_SPECS
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
 from .propagation import Propagator
@@ -60,6 +62,23 @@ def _coerce_max_retries(value):
     if n < 0:
         raise ValueError(f"llm_max_retries must be >= 0, got {n}")
     return n
+
+
+class RunCancelled(Exception):
+    """Raised by ``propagate()`` when ``should_cancel()`` returns True mid-stream.
+
+    The graph has already committed whatever node was executing when the check
+    fired; nodes after that point never ran. ``TradingAgentsGraph.curr_state``
+    holds the partial state for inspection. Deliberately skips ``_log_state``,
+    memory-log decision storage, and checkpoint clearing — a cancelled run
+    isn't a completed decision, and (when ``checkpoint_enabled``) the
+    checkpoint is left intact so a later run can resume past the cancelled point.
+    """
+
+    def __init__(self, company_name: str, trade_date: str):
+        super().__init__(f"Run cancelled for {company_name} on {trade_date}")
+        self.company_name = company_name
+        self.trade_date = trade_date
 
 
 class TradingAgentsGraph:
@@ -186,7 +205,13 @@ class TradingAgentsGraph:
         return kwargs
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
-        """Create tool nodes for different data sources using abstract methods."""
+        """Create tool nodes for different data sources using abstract methods.
+
+        Each ``ToolNode`` is bound to its analyst's own ``messages_key`` (see
+        ``ANALYST_NODE_SPECS``) since the four analysts run as parallel graph
+        branches with isolated tool-calling conversations, not one shared
+        ``messages`` channel — see ``agent_states.py``.
+        """
         return {
             "market": ToolNode(
                 [
@@ -198,13 +223,15 @@ class TradingAgentsGraph:
                     # LLM and required by its prompt; must be executable here or
                     # the call fails and the model reports it "unavailable").
                     get_verified_market_snapshot,
-                ]
+                ],
+                messages_key=ANALYST_NODE_SPECS["market"].messages_key,
             ),
             "social": ToolNode(
                 [
                     # News tools for social media analysis
                     get_news,
-                ]
+                ],
+                messages_key=ANALYST_NODE_SPECS["social"].messages_key,
             ),
             "news": ToolNode(
                 [
@@ -214,7 +241,8 @@ class TradingAgentsGraph:
                     get_insider_transactions,
                     get_macro_indicators,
                     get_prediction_markets,
-                ]
+                ],
+                messages_key=ANALYST_NODE_SPECS["news"].messages_key,
             ),
             "fundamentals": ToolNode(
                 [
@@ -223,7 +251,8 @@ class TradingAgentsGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
-                ]
+                ],
+                messages_key=ANALYST_NODE_SPECS["fundamentals"].messages_key,
             ),
         }
 
@@ -359,7 +388,14 @@ class TradingAgentsGraph:
             f"asset={asset_type}",
         ])
 
-    def propagate(self, company_name, trade_date, asset_type: str = "stock"):
+    def propagate(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_chunk: Callable[[dict], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ):
         """Run the trading agents graph for a company on a specific date.
 
         ``asset_type`` selects between the stock pipeline (default) and the
@@ -368,6 +404,18 @@ class TradingAgentsGraph:
         ``checkpoint_enabled`` is set in config, the graph is recompiled with
         a per-ticker SqliteSaver so a crashed run can resume from the last
         successful node on a subsequent invocation with the same ticker+date.
+
+        ``on_chunk``, when given, is called synchronously with every
+        intermediate state snapshot as the graph streams (only takes effect
+        when ``debug=True``, since that is the only mode that iterates
+        ``graph.stream()`` rather than calling ``graph.invoke()``) — callers
+        that want real-time progress (e.g. a web dashboard pushing SSE
+        events) hook in here instead of duplicating this method's checkpoint
+        and memory-log bookkeeping.
+
+        ``should_cancel``, when given, is polled after every chunk; a
+        True return raises :class:`RunCancelled` once the current node
+        finishes, stopping the graph between nodes rather than mid-call.
         """
         self.ticker = company_name
 
@@ -394,7 +442,10 @@ class TradingAgentsGraph:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
         try:
-            return self._run_graph(company_name, trade_date, asset_type=asset_type)
+            return self._run_graph(
+                company_name, trade_date, asset_type=asset_type,
+                on_chunk=on_chunk, should_cancel=should_cancel,
+            )
         finally:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
@@ -416,7 +467,14 @@ class TradingAgentsGraph:
             )
         return write_report_tree(final_state, ticker, save_path)
 
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
+    def _run_graph(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_chunk: Callable[[dict], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM and the
         # deterministically resolved instrument identity for all agents.
@@ -440,6 +498,7 @@ class TradingAgentsGraph:
         if self.debug:
             trace = []
             last_printed = None
+            cancelled = False
             for chunk in self.graph.stream(init_agent_state, **args):
                 if chunk["messages"]:
                     msg = chunk["messages"][-1]
@@ -450,17 +509,26 @@ class TradingAgentsGraph:
                     if signature != last_printed:
                         msg.pretty_print()
                         last_printed = signature
-                    trace.append(chunk)
+                trace.append(chunk)
+                if on_chunk is not None:
+                    on_chunk(chunk)
+                if should_cancel is not None and should_cancel():
+                    cancelled = True
+                    break
             # Streamed chunks are per-node deltas. Merge them so the returned
             # state matches what graph.invoke() yields in the non-debug path.
             final_state = {}
             for chunk in trace:
                 final_state.update(chunk)
         else:
+            cancelled = False
             final_state = self.graph.invoke(init_agent_state, **args)
 
         # Store current state for reflection.
         self.curr_state = final_state
+
+        if cancelled:
+            raise RunCancelled(company_name, str(trade_date))
 
         # Log state to disk.
         self._log_state(trade_date, final_state)

@@ -1,9 +1,0 @@
-# API Worker secrets — set with `wrangler secret put NAME`.
-# Copy to .dev.vars for `wrangler dev`.
-
-CF_INTERNAL_TOKEN=change-me-to-a-long-random-hex
-R2_ACCOUNT_ID=your-cloudflare-account-id
-R2_ACCESS_KEY_ID=r2-access-key
-R2_SECRET_ACCESS_KEY=r2-secret-key
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=

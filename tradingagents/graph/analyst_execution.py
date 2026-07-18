@@ -7,7 +7,7 @@ from time import monotonic
 class AnalystNodeSpec:
     key: str
     agent_node: str
-    clear_node: str
+    messages_key: str
     tool_node: str
     report_key: str
 
@@ -21,7 +21,7 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
     "market": AnalystNodeSpec(
         key="market",
         agent_node="Market Analyst",
-        clear_node="Msg Clear Market",
+        messages_key="market_messages",
         tool_node="tools_market",
         report_key="market_report",
     ),
@@ -32,21 +32,21 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
         # StockTwits + Reddit, not just social media).
         key="social",
         agent_node="Sentiment Analyst",
-        clear_node="Msg Clear Sentiment",
+        messages_key="sentiment_messages",
         tool_node="tools_social",
         report_key="sentiment_report",
     ),
     "news": AnalystNodeSpec(
         key="news",
         agent_node="News Analyst",
-        clear_node="Msg Clear News",
+        messages_key="news_messages",
         tool_node="tools_news",
         report_key="news_report",
     ),
     "fundamentals": AnalystNodeSpec(
         key="fundamentals",
         agent_node="Fundamentals Analyst",
-        clear_node="Msg Clear Fundamentals",
+        messages_key="fundamentals_messages",
         tool_node="tools_fundamentals",
         report_key="fundamentals_report",
     ),
@@ -119,8 +119,14 @@ def sync_analyst_tracker_from_chunk(
     chunk: dict[str, str],
     now: float | None = None,
 ) -> None:
+    """Update wall-time tracking from a graph.stream() chunk.
+
+    All selected analysts run as parallel branches (graph/setup.py fans out
+    from START to every one of them), so every analyst without a report yet
+    is "started" — not just the first one in plan order, which was the
+    right model back when they ran one at a time.
+    """
     current_time = monotonic() if now is None else now
-    active_found = False
 
     for spec in tracker.plan.specs:
         has_report = bool(chunk.get(spec.report_key))
@@ -128,8 +134,5 @@ def sync_analyst_tracker_from_chunk(
         if has_report:
             tracker.mark_started(spec.key, started_at=current_time)
             tracker.mark_completed(spec.key, completed_at=current_time)
-            continue
-
-        if not active_found:
+        else:
             tracker.mark_started(spec.key, started_at=current_time)
-            active_found = True

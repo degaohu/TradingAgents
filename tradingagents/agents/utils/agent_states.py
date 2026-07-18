@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from langgraph.graph import MessagesState
+from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 
@@ -51,6 +52,19 @@ class AgentState(MessagesState):
     trade_date: Annotated[str, "What date we are trading at"]
 
     sender: Annotated[str, "Agent that sent this message"]
+
+    # Per-analyst tool-calling conversations. The four analysts run as
+    # parallel branches (setup.py fans out from START to all of them and
+    # joins on a deferred "Bull Researcher" node), so each needs its own
+    # ReAct-loop history instead of sharing ``messages`` — a shared list
+    # would let one analyst's routing check (`state[...][-1].tool_calls`)
+    # see another analyst's message when both write in the same superstep.
+    # Downstream agents never read these; they consume the ``*_report``
+    # strings each analyst produces once its own loop concludes.
+    market_messages: Annotated[list, add_messages]
+    sentiment_messages: Annotated[list, add_messages]
+    news_messages: Annotated[list, add_messages]
+    fundamentals_messages: Annotated[list, add_messages]
 
     # research step
     market_report: Annotated[str, "Report from the Market Analyst"]

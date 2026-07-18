@@ -6,6 +6,7 @@ from tradingagents.agents.utils.agent_states import (
     InvestDebateState,
     RiskDebateState,
 )
+from tradingagents.agents.utils.agent_utils import build_analyst_seed_message
 
 
 class Propagator:
@@ -30,7 +31,19 @@ class Propagator:
         ``TradingAgentsGraph.resolve_instrument_context``). When empty, agents
         fall back to ticker-only context via
         ``get_instrument_context_from_state``.
+
+        The four analysts run as parallel branches (see ``graph/setup.py``),
+        each with its own tool-calling conversation seeded here — a shared
+        seed instance would still be fine since the ``add_messages`` reducer
+        keys off id, not identity, but a separate call per channel is one
+        line cheaper to reason about than shared-object aliasing.
         """
+        seed_context = {
+            "instrument_context": instrument_context,
+            "company_of_interest": company_name,
+            "asset_type": asset_type,
+            "trade_date": str(trade_date),
+        }
         return {
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
@@ -38,6 +51,10 @@ class Propagator:
             "instrument_context": instrument_context,
             "trade_date": str(trade_date),
             "past_context": past_context,
+            "market_messages": [build_analyst_seed_message(seed_context)],
+            "sentiment_messages": [build_analyst_seed_message(seed_context)],
+            "news_messages": [build_analyst_seed_message(seed_context)],
+            "fundamentals_messages": [build_analyst_seed_message(seed_context)],
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",
