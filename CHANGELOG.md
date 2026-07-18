@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.2] — 2026-07-18
+
+Polishing release: disabled the hide-on-scroll logic on desktop views to keep the reader toolbar stickily visible, guaranteeing the back button is always accessible.
+
+### Fixed
+
+- **Persistent Desktop Reader Exit.** Restored sticky float positioning for the capsule toolbar on desktop screens when scrolling. Users can now exit reader mode at any time without having to scroll back up.
+
 ## [0.4.1] — 2026-07-18
 
 Polishing and monitoring release: refined the mobile layout, added backend IP geolocation resolution, implemented a live user heartbeat tracker, and resolved charting visual collisions.

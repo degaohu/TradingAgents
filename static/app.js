@@ -192,6 +192,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // show, collapse the form to a compact row so that content gets
         // the room instead of sharing space with a full-size idle form.
         configForm.classList.toggle("form-collapsed", view !== welcomeView);
+        // Reader mode (which hides the sidebar) must track the current view —
+        // never leave the sidebar hidden on the welcome/loading view.
+        if (typeof window.__taApplyReaderSettings === "function") {
+            window.__taApplyReaderSettings();
+        }
     }
 
     function setSubmitting(isSubmitting) {
@@ -1643,10 +1648,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const MAX_FONT = 24;
 
         function applySettings() {
-            // Apply reader mode class
-            resultsView.classList.toggle("editorial-reader-mode", readerActive);
-            document.body.classList.toggle("reader-mode-active", readerActive);
-            settingsPanel.style.display = readerActive ? "flex" : "none";
+            // Reader mode hides the sidebar/config for distraction-free
+            // reading — but it must ONLY do so while a report is actually on
+            // screen. Otherwise a saved "reader on" preference would hide the
+            // sidebar on the welcome view after a reload/re-login, leaving the
+            // user stuck with no way to enter a ticker (the "menu 不出现" bug).
+            const resultsActive = resultsView.classList.contains("active");
+            const effectiveReader = readerActive && resultsActive;
+            resultsView.classList.toggle("editorial-reader-mode", effectiveReader);
+            document.body.classList.toggle("reader-mode-active", effectiveReader);
+            settingsPanel.style.display = effectiveReader ? "flex" : "none";
 
             // Update toggle button text based on state and current language
             const btnTextEl = toggleBtn.querySelector(".btn-text-lang");
@@ -2017,32 +2028,15 @@ document.addEventListener("DOMContentLoaded", () => {
         // Initialize and apply
         applySettings();
 
+        // Let showView() re-evaluate reader mode whenever the view changes
+        // (so the sidebar reappears on the welcome view and reader mode is
+        // restored when a report is shown again).
+        window.__taApplyReaderSettings = applySettings;
+
         // Calculate time on first load if results exist
         setTimeout(calculateReadingTime, 1000);
 
-        // --- Hide/Show Toolbar on Scroll ---
-        let lastScrollTop = 0;
-        const toolbar = document.getElementById("reader-toolbar");
-        
-        resultsView.addEventListener("scroll", () => {
-            if (!resultsView.classList.contains("editorial-reader-mode")) return;
-            // Skip hiding on mobile devices where toolbar is static
-            if (window.innerWidth <= 768) return;
-            
-            const st = resultsView.scrollTop;
-            if (st > lastScrollTop && st > 80) {
-                // Scroll down: slide out of view
-                toolbar.style.transform = "translate3d(-50%, -80px, 0)";
-                toolbar.style.opacity = "0";
-                toolbar.style.pointerEvents = "none";
-            } else {
-                // Scroll up: restore into view
-                toolbar.style.transform = "translate3d(-50%, 0, 0)";
-                toolbar.style.opacity = "1";
-                toolbar.style.pointerEvents = "auto";
-            }
-            lastScrollTop = st <= 0 ? 0 : st;
-        }, { passive: true });
+        // Toolbar remains sticky at the top on desktop to guarantee back button access
     })();
 });
 
