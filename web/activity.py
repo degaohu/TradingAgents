@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS activity (
     detail   TEXT,
     ip       TEXT
 );
+CREATE TABLE IF NOT EXISTS ip_regions (
+    ip     TEXT PRIMARY KEY,
+    region TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity(username);
 """
@@ -47,6 +51,51 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def get_cached_region(ip: str) -> str | None:
+    try:
+        with sqlite3.connect(_DB_PATH, timeout=2.0) as conn:
+            row = conn.execute("SELECT region FROM ip_regions WHERE ip = ?", (ip,)).fetchone()
+            return row[0] if row else None
+    except Exception:
+        return None
+
+
+def set_cached_region(ip: str, region: str) -> None:
+    try:
+        with _write_lock, sqlite3.connect(_DB_PATH, timeout=5.0) as conn:
+            conn.execute("INSERT OR REPLACE INTO ip_regions (ip, region) VALUES (?, ?)", (ip, region))
+    except Exception:
+        pass
+
+
+def get_ip_region(ip: str) -> str:
+    if not ip or ip in ("127.0.0.1", "::1", "localhost", "unknown", ""):
+        return "本地"
+    if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
+        return "局域网"
+
+    cached = get_cached_region(ip)
+    if cached:
+        return cached
+
+    import urllib.request
+    import json
+    try:
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=3.0) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if data.get("status") == "success":
+                region = f"{data.get('country', '')} {data.get('regionName', '')} {data.get('city', '')}".strip()
+                if region:
+                    set_cached_region(ip, region)
+                    return region
+    except Exception:
+        pass
+
+    return "未知"
+
+
 def log_activity(username: str | None, action: str, detail: str = "", ip: str = "") -> None:
     """Append one activity event. Never raises — a logging failure must not
     break the request that triggered it."""
@@ -57,6 +106,9 @@ def log_activity(username: str | None, action: str, detail: str = "", ip: str = 
                 "INSERT INTO activity (ts, username, action, detail, ip) VALUES (?, ?, ?, ?, ?)",
                 (ts, username, action, detail, ip),
             )
+        # Prefetch and cache region in background thread so it doesn't block the request
+        if ip and ip not in ("127.0.0.1", "::1", "localhost", "unknown"):
+            threading.Thread(target=get_ip_region, args=(ip,), daemon=True).start()
     except Exception:
         pass
 

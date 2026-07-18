@@ -80,6 +80,19 @@ _access_log: collections.deque = collections.deque(maxlen=500)
 _access_lock = threading.Lock()
 
 
+# ── Live User Sessions tracking ──────────────────────────────────────────────
+_live_sessions_lock = threading.Lock()
+_live_sessions: dict[str, dict] = {}
+
+
+def _cleanup_live_sessions() -> None:
+    now = time.time()
+    with _live_sessions_lock:
+        stale = [sid for sid, s in _live_sessions.items() if now - s["last_seen"] > 25]
+        for sid in stale:
+            _live_sessions.pop(sid, None)
+
+
 def _client_ip(req: Request) -> str:
     forwarded = req.headers.get("x-forwarded-for", "")
     return forwarded.split(",")[0].strip() if forwarded else (
@@ -154,9 +167,9 @@ app = FastAPI(title="TradingAgents Web Dashboard")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Always allow: login page, login POST, logout, static assets, PWA meta.
+    # Always allow: login page, login POST, logout, static assets, PWA meta, heartbeat.
     public = (
-        path in ("/login", "/api/login", "/api/logout", "/manifest.json", "/sw.js") or
+        path in ("/login", "/api/login", "/api/logout", "/manifest.json", "/sw.js", "/api/heartbeat") or
         path.startswith("/assets/") or
         path.endswith((".js", ".css", ".ico", ".png", ".jpg", ".svg", ".woff2"))
     )
@@ -266,6 +279,42 @@ def whoami(request: Request):
     }
 
 
+@app.post("/api/heartbeat")
+async def api_heartbeat(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"status": "error", "message": "invalid_json"}, status_code=400)
+
+    session_id = data.get("session_id")
+    if not session_id:
+        return JSONResponse({"status": "error", "message": "missing_session_id"}, status_code=400)
+
+    username = _get_current_user(request) or "Guest"
+    ip = _client_ip(request)
+    view = data.get("view", "unknown")
+    ticker = data.get("ticker", "")
+    duration = int(data.get("duration", 0))
+
+    now = time.time()
+    with _live_sessions_lock:
+        if session_id not in _live_sessions:
+            _live_sessions[session_id] = {
+                "started_at": now,
+                "username": username,
+                "ip": ip,
+            }
+        s = _live_sessions[session_id]
+        s["username"] = username
+        s["ip"] = ip
+        s["view"] = view
+        s["ticker"] = ticker
+        s["duration"] = duration
+        s["last_seen"] = now
+
+    return JSONResponse({"status": "ok"})
+
+
 # ── Admin panel ──────────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
@@ -314,16 +363,50 @@ def admin_status(request: Request):
         # Plaintext password — shown only to admins (this endpoint is
         # admin-gated). Deliberate operator choice; see web/users.py.
         row["password"] = passwords.get(name)
+
+    # Enrich recent activity with IP regions
+    recent_activity = activity.recent_activity(100)
+    for act in recent_activity:
+        act["region"] = activity.get_ip_region(act.get("ip", ""))
+
+    # Enrich top IPs with regions
+    top_ips_enriched = []
+    for ip, n in top_ips:
+        top_ips_enriched.append({
+            "ip": ip,
+            "count": n,
+            "region": activity.get_ip_region(ip)
+        })
+
+    # Assemble live active visitors info
+    _cleanup_live_sessions()
+    live_users_list = []
+    now = time.time()
+    with _live_sessions_lock:
+        for sid, s in _live_sessions.items():
+            dwell = int(now - s["started_at"])
+            live_users_list.append({
+                "username": s["username"],
+                "ip": s["ip"],
+                "region": activity.get_ip_region(s["ip"]),
+                "view": s["view"],
+                "ticker": s["ticker"],
+                "duration": s["duration"],
+                "dwell": dwell,
+                "last_seen_ago": int(now - s["last_seen"])
+            })
+
     return {
         "maintenance": os.environ.get("TRADINGAGENTS_MAINTENANCE", "").lower() in ("true", "1", "yes"),
         "current_user": _get_current_user(request),
         "users": usernames,
         "admin_users": list(admin_set),
         "user_summary": user_summary,
-        "recent_activity": activity.recent_activity(100),
+        "recent_activity": recent_activity,
         "total_requests": len(log_snapshot),
-        "top_ips": [{"ip": ip, "count": n} for ip, n in top_ips],
-        "recent_requests": recent,
+        "top_ips": top_ips_enriched,
+        "recent_requests": [{**e, "region": activity.get_ip_region(e["ip"])} for e in recent],
+        "live_users": live_users_list,
         "running_job": {
             "id": job.id,
             "ticker": job.ticker,
@@ -1223,6 +1306,14 @@ _ADMIN_HTML = """<!DOCTYPE html>
 </div>
 
 <div class="card">
+  <h2>在线用户 (Live Users)</h2>
+  <table>
+    <thead><tr><th>用户</th><th>IP 地区</th><th>当前操作</th><th>查看标的</th><th>已停留时长</th><th>状态</th></tr></thead>
+    <tbody id="live-users-tbody"></tbody>
+  </table>
+</div>
+
+<div class="card">
   <h2>正在运行的任务</h2>
   <div id="job-info" style="color:#8B949E;font-size:13px">暂无运行中的任务</div>
 </div>
@@ -1230,20 +1321,20 @@ _ADMIN_HTML = """<!DOCTYPE html>
 <div class="card">
   <h2>操作日志</h2>
   <table>
-    <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th><th>IP</th></tr></thead>
+    <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th><th>IP 地区</th></tr></thead>
     <tbody id="activity-tbody"></tbody>
   </table>
 </div>
 
 <div class="card">
   <h2>访问最多的 IP（前 20）</h2>
-  <table><thead><tr><th>IP</th><th>请求数</th></tr></thead><tbody id="ip-tbody"></tbody></table>
+  <table><thead><tr><th>IP</th><th>归属地区</th><th>请求数</th></tr></thead><tbody id="ip-tbody"></tbody></table>
 </div>
 
 <div class="card">
   <h2>最近 50 条原始请求</h2>
   <table>
-    <thead><tr><th>时间</th><th>用户</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th></tr></thead>
+    <thead><tr><th>时间</th><th>用户</th><th>IP 地区</th><th>方法</th><th>路径</th><th>状态</th></tr></thead>
     <tbody id="log-tbody"></tbody>
   </table>
 </div>
@@ -1349,14 +1440,41 @@ async function load(){
     (d.recent_activity||[]).map(e=>{
       const cls = ACTION_CLASS[e.action] || '';
       const label = ACTION_LABELS[e.action] || e.action;
+      const reg = e.region ? `<span style="font-size:11px;opacity:0.6;display:block">${esc(e.region)}</span>` : '';
       return `<tr>
         <td>${esc(e.ts)}</td>
         <td style="color:#B98029;font-weight:500">${esc(e.username)||'—'}</td>
         <td>${cls?`<span class="badge ${cls}">${esc(label)}</span>`:esc(label)}</td>
         <td>${esc(e.detail)||''}</td>
-        <td>${esc(e.ip)||''}</td>
+        <td>${esc(e.ip)||''}${reg}</td>
       </tr>`;
     }).join('');
+
+  // Live active visitors tracker binding
+  document.getElementById('live-users-tbody').innerHTML =
+    (d.live_users||[]).map(x=>{
+      let viewLabel = x.view;
+      if(x.view === 'welcome') viewLabel = '🎯 配置参数中';
+      else if(x.view === 'running') viewLabel = '⏳ 正在进行量化分析';
+      else if(x.view === 'reader') viewLabel = '📖 深度阅读社论报告';
+      else if(x.view === 'dashboard') viewLabel = '📊 浏览仪表盘指标';
+
+      const lastSeen = x.last_seen_ago <= 5 ? '在线 🟢' : `${x.last_seen_ago}秒前`;
+
+      const durationMin = Math.floor(x.duration / 60);
+      const durationSec = x.duration % 60;
+      const durationStr = durationMin > 0 ? `${durationMin}分${durationSec}秒` : `${durationSec}秒`;
+
+      const reg = x.region ? `<span style="font-size:11px;opacity:0.6;display:block">${esc(x.region)}</span>` : '';
+      return `<tr>
+        <td style="color:#3FB950;font-weight:600">${esc(x.username)}</td>
+        <td>${esc(x.ip)}${reg}</td>
+        <td><span class="badge ok">${esc(viewLabel)}</span></td>
+        <td style="font-family:monospace;font-weight:600">${esc(x.ticker)||'—'}</td>
+        <td>${durationStr}</td>
+        <td><span style="color:#30D158;font-weight:500">${lastSeen}</span></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:#8B949E;text-align:center;padding:12px">暂无在线活跃用户</td></tr>';
 
   // Maintenance button text
   document.getElementById('btn-maintenance').textContent =
@@ -1377,17 +1495,18 @@ async function load(){
 
   // IPs
   document.getElementById('ip-tbody').innerHTML =
-    d.top_ips.map(x=>`<tr><td>${esc(x.ip)}</td><td>${x.count}</td></tr>`).join('');
+    d.top_ips.map(x=>`<tr><td>${esc(x.ip)}</td><td>${esc(x.region)||'未知'}</td><td>${x.count}</td></tr>`).join('');
 
   // Log
   document.getElementById('log-tbody').innerHTML =
     d.recent_requests.map(e=>{
       const sc = e.status;
       const cls = sc>=500?'err':sc>=400?'warn':'ok';
+      const reg = e.region ? `<span style="font-size:11px;opacity:0.6;display:block">${esc(e.region)}</span>` : '';
       return `<tr>
         <td>${esc(e.ts)}</td>
         <td style="color:#B98029;font-weight:500">${esc(e.user)||'—'}</td>
-        <td>${esc(e.ip)}</td><td>${esc(e.method)}</td>
+        <td>${esc(e.ip)}${reg}</td><td>${esc(e.method)}</td>
         <td style="font-family:monospace">${esc(e.path)}</td>
         <td><span class="badge ${cls}">${e.status}</span></td>
       </tr>`;

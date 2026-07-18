@@ -3379,4 +3379,57 @@ document.addEventListener("DOMContentLoaded", () => {
     applyDepthPreset(localStorage.getItem("tradingagents.depth") || "balanced");
     // Notif button icon
     _updateNotifButton();
+
+    // Start live tracking heartbeat
+    (function initHeartbeat() {
+        const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        const pageStartedAt = Date.now();
+
+        function sendHeartbeat() {
+            if (document.hidden) return; // tab is inactive
+
+            let viewState = "welcome";
+            const welcomeView = document.getElementById("welcome-view");
+            const loadingView = document.getElementById("loading-view");
+            const resultsView = document.getElementById("results-view");
+
+            if (loadingView && loadingView.classList.contains("active")) {
+                viewState = "running";
+            } else if (resultsView && resultsView.classList.contains("active")) {
+                if (resultsView.classList.contains("editorial-reader-mode")) {
+                    viewState = "reader";
+                } else {
+                    viewState = "dashboard";
+                }
+            }
+
+            let activeTicker = "";
+            if (viewState === "welcome") {
+                const tickerInput = document.getElementById("ticker");
+                activeTicker = tickerInput ? tickerInput.value.trim() : "";
+            } else if (viewState === "running") {
+                const titleEl = document.querySelector("#loading-view h2");
+                activeTicker = titleEl ? titleEl.textContent.trim() : "";
+            } else {
+                const resTicker = document.getElementById("res-ticker");
+                activeTicker = resTicker ? resTicker.textContent.trim() : "";
+            }
+
+            const duration = Math.floor((Date.now() - pageStartedAt) / 1000);
+
+            fetch("/api/heartbeat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    view: viewState,
+                    ticker: activeTicker,
+                    duration: duration
+                })
+            }).catch(() => {});
+        }
+
+        setInterval(sendHeartbeat, 10000);
+        setTimeout(sendHeartbeat, 1000);
+    })();
 });
