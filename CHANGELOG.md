@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.5] — 2026-07-18
+
+Polishing release: added a dedicated mobile back button to return to the input screen, improved readability and color contrast on the History page, and added detailed stock metadata (Chinese names and English abbreviations).
+
+### Added
+
+- **Mobile Topbar Back Button.** Replaced the static brand logo with a clear "重新选择" (Back) button in the mobile header when viewing loading progress or results. Tapping it resets the workspace to the Welcome screen and reveals the full input parameters form.
+- **Detailed Stock Metadata.** Dynamically resolves Chinese names, English names, and abbreviations for both US stocks and A-shares. Displays this enriched metadata next to the ticker in the report header, KPI cards, and History list items.
+
+### Changed
+
+- **History List Typography & Contrast.** Increased ticker font size to `14px` and set it to solid white. Modified dates to a high-contrast translucent white (`rgba(255,255,255,0.45)`).
+- **Vibrant Decision Badges.** Styled the decision status badges in the History panel with larger `11px` bold text and vibrant, high-contrast colors (green for Buy, red for Sell, and bright amber-yellow for Hold/Underweight) for immediate scannability.
+
 ## [0.4.4] — 2026-07-18
 
 Polishing release: resolved mobile TOC drawer interaction bugs, added a scroll-to-center animation with flash highlight for clicked sections/subsections, and fixed the non-functional drawer close button.

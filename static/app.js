@@ -201,6 +201,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof window.__taApplyReaderSettings === "function") {
             window.__taApplyReaderSettings();
         }
+
+        // Toggle mobile back button visibility dynamically based on active view
+        const mobBackBtn = document.getElementById("mob-back-btn");
+        const mobLogoIcon = document.getElementById("mob-logo-icon");
+        const mobLogoText = document.getElementById("mob-logo-text");
+        if (mobBackBtn) {
+            const isWelcome = (view === welcomeView);
+            mobBackBtn.style.display = isWelcome ? "none" : "flex";
+            if (mobLogoIcon) mobLogoIcon.style.display = isWelcome ? "inline-block" : "none";
+            if (mobLogoText) mobLogoText.style.display = isWelcome ? "inline-block" : "none";
+        }
     }
 
     function setSubmitting(isSubmitting) {
@@ -1021,11 +1032,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const mapped = RATING_MAP[ratingText] || RATING_MAP[ratingText.toUpperCase()];
         confidenceEl.textContent = mapped ? mapped[currentLang] : ratingText;
 
-        const ticker = data.company_of_interest || data.ticker || "--";
+        const ticker = data.ticker || "--";
+        const details = data.stock_details || {};
+        const nameZh = details.name_zh || "";
+        const abbr = details.abbr || "";
+        const tickerText = nameZh ? `${ticker} | ${nameZh} (${abbr})` : ticker;
+
         const date   = data.trade_date || "--";
-        document.getElementById("res-ticker").textContent = ticker;
+        document.getElementById("res-ticker").textContent = tickerText;
         document.getElementById("res-date").textContent   = date;
-        document.getElementById("res-ticker-lg").textContent = ticker;
+        document.getElementById("res-ticker-lg").textContent = tickerText;
         document.getElementById("res-date-lg").textContent   = date;
 
         document.getElementById("res-entry").textContent    = formatPrice(summary.entry_price);
@@ -2565,10 +2581,14 @@ function _rerenderHistory() {
             badgeClass = display ? display.cls : "hold";
         }
 
+        const nameZh = item.name_zh || "";
+        const abbr = item.abbr || "";
+        const extraInfo = nameZh ? ` | ${nameZh} (${abbr})` : "";
+
         row.innerHTML = `
             <button class="hist-star ${isStarred ? 'on' : ''}" type="button" title="${currentLang==='zh'?'星标':'Star'}">${isStarred ? '★' : '☆'}</button>
             <div class="hist-meta">
-                <span class="hist-sym">${escapeHtml(item.ticker)}</span>
+                <span class="hist-sym">${escapeHtml(item.ticker)}${escapeHtml(extraInfo)}</span>
                 <span class="hist-date">${escapeHtml(item.trade_date)}</span>
             </div>
             <span class="hist-badge ${badgeClass}">
@@ -3065,11 +3085,21 @@ window.__taApplyTocSentiments = function(data) {
     topbar.className = 'mobile-topbar';
     topbar.style.display = 'flex';   // always show on tablet/mobile (JS only runs when isTablet())
     topbar.innerHTML = `
-      <span class="logo-icon" style="color:var(--accent-pink);font-size:13px">■</span>
-      <span class="logo-text">TRADING AGENTS <span id="mob-version" style="font-size:9px; opacity:0.5; font-family:var(--font-mono); font-weight:500; margin-left:4px;"></span></span>
+      <button id="mob-back-btn" class="mob-back-btn" style="display: none; align-items: center; background: none; border: none; color: var(--accent-pink); font-size: 13px; font-weight: 700; cursor: pointer; padding: 0;">
+        <span style="font-size: 15px; margin-right: 2px;">←</span> <span data-zh="重新选择" data-en="Back">重新选择</span>
+      </button>
+      <span class="logo-icon" id="mob-logo-icon" style="color:var(--accent-pink);font-size:13px">■</span>
+      <span class="logo-text" id="mob-logo-text">TRADING AGENTS <span id="mob-version" style="font-size:9px; opacity:0.5; font-family:var(--font-mono); font-weight:500; margin-left:4px;"></span></span>
       <span class="topbar-ticker" id="mob-ticker"></span>
     `;
     mainContent.insertBefore(topbar, mainContent.firstChild);
+
+    const mobBackBtn = topbar.querySelector('#mob-back-btn');
+    if (mobBackBtn) {
+        mobBackBtn.addEventListener('click', () => {
+            showView(welcomeView);
+        });
+    }
 
     // ── 1b. Relocate the ticker/date form so it reads top-to-bottom as
     // [brand topbar] → [form] → [welcome/loading/results] on the Analyze

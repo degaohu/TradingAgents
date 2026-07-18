@@ -46,6 +46,70 @@ from .version import get_version  # noqa: E402
 
 logger = logging.getLogger("TradingAgentsWebServer")
 
+
+def get_stock_details(ticker: str) -> dict:
+    ticker_upper = ticker.strip().upper()
+    
+    # Pre-configured lookup dictionary for instant response
+    STOCK_DB = {
+        "NVDA": {"zh": "英伟达", "en": "NVIDIA Corporation", "abbr": "NVDA"},
+        "AAPL": {"zh": "苹果公司", "en": "Apple Inc.", "abbr": "AAPL"},
+        "TSLA": {"zh": "特斯拉", "en": "Tesla Inc.", "abbr": "TSLA"},
+        "MSFT": {"zh": "微软公司", "en": "Microsoft Corporation", "abbr": "MSFT"},
+        "AMZN": {"zh": "亚马逊", "en": "Amazon.com Inc.", "abbr": "AMZN"},
+        "GOOG": {"zh": "谷歌公司", "en": "Alphabet Inc.", "abbr": "GOOG"},
+        "GOOGL": {"zh": "谷歌公司", "en": "Alphabet Inc.", "abbr": "GOOGL"},
+        "ARM": {"zh": "安谋控股", "en": "ARM Holdings plc", "abbr": "ARM"},
+        "AVGO": {"zh": "博通公司", "en": "Broadcom Inc.", "abbr": "AVGO"},
+        "META": {"zh": "脸书集团", "en": "Meta Platforms Inc.", "abbr": "META"},
+        "NFLX": {"zh": "奈飞公司", "en": "Netflix Inc.", "abbr": "NFLX"},
+        "AMD": {"zh": "超威半导体", "en": "Advanced Micro Devices", "abbr": "AMD"},
+        "INTC": {"zh": "英特尔", "en": "Intel Corporation", "abbr": "INTC"},
+        "QCOM": {"zh": "高通公司", "en": "Qualcomm Inc.", "abbr": "QCOM"},
+        "ASML": {"zh": "阿斯麦", "en": "ASML Holding N.V.", "abbr": "ASML"},
+        "TSM": {"zh": "台积电", "en": "Taiwan Semiconductor Manufacturing", "abbr": "TSM"},
+        "BABA": {"zh": "阿里巴巴", "en": "Alibaba Group Holding", "abbr": "BABA"},
+        "PDD": {"zh": "拼多多", "en": "PDD Holdings Inc.", "abbr": "PDD"},
+        "JD": {"zh": "京东集团", "en": "JD.com Inc.", "abbr": "JD"},
+        "TCEHY": {"zh": "腾讯控股", "en": "Tencent Holdings Ltd.", "abbr": "TCEHY"},
+        
+        # A-shares from user's screenshots and common benchmarks
+        "300487.SZ": {"zh": "芒果超媒", "en": "Mango Excellent Media", "abbr": "MGCM"},
+        "601088.SS": {"zh": "中国神华", "en": "China Shenhua Energy", "abbr": "ZGSH"},
+        "300567.SZ": {"zh": "爱乐达", "en": "Chengdu Aileda Aerospace", "abbr": "ALD"},
+        "600519.SS": {"zh": "贵州茅台", "en": "Kweichow Moutai", "abbr": "GZMT"},
+        "000858.SZ": {"zh": "五粮液", "en": "Wuliangye Yibin", "abbr": "WLY"},
+        "300750.SZ": {"zh": "宁德时代", "en": "CATL", "abbr": "NDSD"},
+        "601318.SS": {"zh": "中国平安", "en": "Ping An Insurance", "abbr": "ZGPA"},
+        "600036.SS": {"zh": "招商银行", "en": "China Merchants Bank", "abbr": "ZSYH"},
+        "000001.SZ": {"zh": "平安银行", "en": "Ping An Bank", "abbr": "PAYH"},
+        "600900.SS": {"zh": "长江电力", "en": "China Yangtze Power", "abbr": "CJDL"},
+        "000333.SZ": {"zh": "美的集团", "en": "Midea Group", "abbr": "MDJT"},
+        "000651.SZ": {"zh": "格力电器", "en": "Gree Electric Appliances", "abbr": "GLDQ"},
+        "601166.SS": {"zh": "兴业银行", "en": "Industrial Bank", "abbr": "XYYH"},
+        "600030.SS": {"zh": "中信证券", "en": "CITIC Securities", "abbr": "ZXZQ"},
+        "002475.SZ": {"zh": "立讯精密", "en": "Luxshare Precision", "abbr": "LXJM"},
+        "002594.SZ": {"zh": "比亚迪", "en": "BYD Company", "abbr": "BYD"},
+        "601888.SS": {"zh": "中国中免", "en": "China Tourism Duty Free", "abbr": "ZGZM"},
+        "600276.SS": {"zh": "恒瑞医药", "en": "Jiangsu Hengrui Medicine", "abbr": "HRYY"},
+        "000725.SZ": {"zh": "京东方A", "en": "BOE Technology Group", "abbr": "JDF"},
+        "300059.SZ": {"zh": "东方财富", "en": "East Money Information", "abbr": "DFCF"},
+    }
+    
+    # Try matching base symbol
+    if ticker_upper in STOCK_DB:
+        return STOCK_DB[ticker_upper]
+        
+    prefix = ticker_upper.split(".")[0]
+    if prefix in STOCK_DB:
+        return STOCK_DB[prefix]
+        
+    if ticker_upper.endswith((".SS", ".SZ", ".BJ")):
+        return {"zh": f"中国A股 ({prefix})", "en": f"A-Share {ticker_upper}", "abbr": prefix}
+    else:
+        return {"zh": ticker_upper, "en": ticker_upper, "abbr": ticker_upper}
+
+
 # ── Multi-user access control ────────────────────────────────────────────────
 # Hard-coded user list: username → password. Each user has its own env var
 # so distinct accounts actually have distinct credentials — three users
@@ -676,6 +740,7 @@ def _build_config(req: AnalysisRequest) -> dict:
 
 
 def _build_result_payload(job: Job, final_state: dict, rating: str) -> dict:
+    details = get_stock_details(job.ticker)
     return {
         "ticker": job.ticker,
         "trade_date": job.trade_date,
@@ -691,6 +756,11 @@ def _build_result_payload(job: Job, final_state: dict, rating: str) -> dict:
         "investment_debate_state": final_state.get("investment_debate_state", {}),
         "risk_debate_state": final_state.get("risk_debate_state", {}),
         "decision_summary": build_decision_summary(final_state, rating),
+        "stock_details": {
+            "name_zh": details["zh"],
+            "name_en": details["en"],
+            "abbr": details["abbr"]
+        }
     }
 
 
@@ -845,6 +915,13 @@ def get_history(request: Request):
     user = _get_current_user(request)
     items = history.list_history(user)
 
+    # Enrich each historical item with stock details dynamically
+    for it in items:
+        details = get_stock_details(it["ticker"])
+        it["name_zh"] = details["zh"]
+        it["name_en"] = details["en"]
+        it["abbr"] = details["abbr"]
+
     running = registry.running_job()
     if running is not None and running.started_by == user:
         live_key = (running.ticker, running.trade_date)
@@ -852,6 +929,7 @@ def get_history(request: Request):
         # collapse it into the live entry rather than showing both — the
         # user re-ran it, the old result is stale until the new one lands.
         items = [it for it in items if (it.get("ticker"), it.get("trade_date")) != live_key]
+        details = get_stock_details(running.ticker)
         items.insert(0, {
             "ticker": running.ticker,
             "trade_date": running.trade_date,
@@ -859,6 +937,9 @@ def get_history(request: Request):
             "status": "running",
             "job_id": running.id,
             "ts": None,
+            "name_zh": details["zh"],
+            "name_en": details["en"],
+            "abbr": details["abbr"]
         })
 
     # Mark all historical rows as "done" for a uniform frontend schema.
@@ -873,6 +954,14 @@ def get_history_entry(ticker: str, trade_date: str, request: Request):
     result = history.get_history_result(user, ticker, trade_date)
     if result is None:
         raise HTTPException(status_code=404, detail="history entry not found")
+    
+    # Inject stock details dynamically so older reports display full metadata
+    details = get_stock_details(ticker)
+    result["stock_details"] = {
+        "name_zh": details["zh"],
+        "name_en": details["en"],
+        "abbr": details["abbr"]
+    }
     return result
 
 
