@@ -914,7 +914,8 @@ body {
 }
 .rating-scale {
     position: relative;
-    padding-top: 18px;
+    padding-top: 8px;
+    padding-bottom: 18px;
 }
 .rating-scale-track {
     height: 6px;
@@ -924,7 +925,7 @@ body {
 }
 .rating-tick {
     position: absolute;
-    top: -14px;
+    top: 14px;
     font-size: 8.5px;
     font-weight: 700;
     color: var(--text-muted);
@@ -939,15 +940,15 @@ body {
 
 .rating-marker {
     position: absolute;
-    width: 8px;
-    height: 14px;
-    background: white;
-    border: 2px solid black;
-    border-radius: 2px;
-    top: -4px;
+    width: 10px;
+    height: 16px;
+    background: var(--accent-pink, #FF2D55);
+    border: 2px solid #fff;
+    border-radius: 3px;
+    top: -5px;
     transform: translateX(-50%);
     transition: left 0.4s ease;
-    box-shadow: 0 0 6px rgba(255,255,255,0.6);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
 }
 
 /* KPI rows */
@@ -4049,7 +4050,8 @@ body.theme-light .persistence-notice .notice-text {
     color: #1f2937;
 }
 
-/* Hide sidebar and toggle buttons completely when Reader Mode is active (for distraction-free reading on both Mobile and Desktop) */
+/* Hide config form, sidebar and toggle buttons completely when Reader Mode is active (for distraction-free reading on both Mobile and Desktop) */
+body.reader-mode-active #config-form,
 body.reader-mode-active .sidebar-config,
 body.reader-mode-active #sidebar-toggle-btn {
     display: none !important;

@@ -2222,15 +2222,37 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
         svg.appendChild(text);
     }
 
+    // Keep track of used Y positions to prevent label collisions
+    const usedYPositions = [];
+
     // Helper to draw horizontal guides
     function drawGuideLine(val, stroke, labelText, isDashed) {
         if (val == null) return;
-        const y = getY(val);
+        const valY = getY(val);
+        let textY = valY;
+
+        // Resolve collision: if textY is too close to any already used Y position, shift it down
+        const minSpacing = 12; // pixels
+        let attempts = 0;
+        let collided = true;
+        while (collided && attempts < 10) {
+            collided = false;
+            for (const prevY of usedYPositions) {
+                if (Math.abs(textY - prevY) < minSpacing) {
+                    textY += minSpacing;
+                    collided = true;
+                    break;
+                }
+            }
+            attempts++;
+        }
+        usedYPositions.push(textY);
+
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", margin.left);
-        line.setAttribute("y1", y);
+        line.setAttribute("y1", valY);
         line.setAttribute("x2", margin.left + chartWidth);
-        line.setAttribute("y2", y);
+        line.setAttribute("y2", valY);
         line.setAttribute("stroke", stroke);
         line.setAttribute("stroke-width", "1.2");
         if (isDashed) {
@@ -2240,7 +2262,7 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
 
         const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
         txt.setAttribute("x", margin.left + chartWidth + 6);
-        txt.setAttribute("y", y + 3);
+        txt.setAttribute("y", textY + 3);
         txt.setAttribute("fill", stroke);
         txt.setAttribute("font-size", "10px");
         txt.setAttribute("font-family", "var(--font-main)");
@@ -2266,8 +2288,14 @@ function drawPriceChart(prices, entry, target, stop, tradeDate) {
             text.textContent = prices[index].date;
             svg.appendChild(text);
         };
-        drawXLabel(0, "start");
-        drawXLabel(prices.length - 1, "end");
+
+        // Determine if specific trade date marker is close to start or end to avoid label overlap
+        const thresholdIdx = Math.max(1, Math.floor(prices.length * 0.12));
+        const showStart = (tradeDateIdx === -1 || tradeDateIdx > thresholdIdx);
+        const showEnd = (tradeDateIdx === -1 || (prices.length - 1 - tradeDateIdx) > thresholdIdx);
+
+        if (showStart) drawXLabel(0, "start");
+        if (showEnd) drawXLabel(prices.length - 1, "end");
     }
 
     // 6. Hover interactions
