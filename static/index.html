@@ -212,7 +212,13 @@
             <div id="loading-view" class="center-view">
                 <div class="loader-box">
                     <h2 data-zh="多智能体协同分析中..." data-en="Running Multi-Agent Orchestration...">多智能体协同分析中...</h2>
-                    <p data-zh="正在调度各分析智能体，采集金融数据。大约需要 1-3 分钟，请耐心等待。" data-en="Dispatching agents & gathering financial metrics. This may take 1-3 minutes.">正在调度各分析智能体，采集金融数据。大约需要 1-3 分钟，请耐心等待。</p>
+                    <p data-zh="正在调度各分析智能体，采集金融数据。大约需要 5 分钟，请耐心等待。" data-en="Dispatching agents & gathering financial metrics. This may take around 5 minutes.">正在调度各分析智能体，采集金融数据。大约需要 5 分钟，请耐心等待。</p>
+
+                    <!-- Server-side background execution persistence alert -->
+                    <div class="persistence-notice">
+                        <span class="notice-icon">ℹ️</span>
+                        <span class="notice-text" data-zh="分析任务已在服务器后台排队运行。您可以放心关闭当前页面，5 分钟后再回来，在左下角「历史分析记录」中查阅生成的报告。" data-en="The analysis runs in the background on the cloud. You can safely close this page and return in ~5 minutes to view the report under the bottom-left 'History' panel.">分析任务已在服务器后台排队运行。您可以放心关闭当前页面，5 分钟后再回来，在左下角「历史分析记录」中查阅生成的报告。</span>
+                    </div>
 
                     <div id="loading-hud" class="loading-hud">
                         <div class="hud-topline">
@@ -683,45 +689,61 @@
                             <a href="#sec-technical" class="toc-link active" data-section="sec-technical">
                                 <span class="toc-num">01</span>
                                 <span class="toc-name" data-zh="技术分析" data-en="Technical">技术分析</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-technical" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-technical"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-technical"></ul>
                             <a href="#sec-fundamentals" class="toc-link" data-section="sec-fundamentals">
                                 <span class="toc-num">02</span>
                                 <span class="toc-name" data-zh="财务估值" data-en="Fundamentals">财务估值</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-fundamentals" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-fundamentals"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-fundamentals"></ul>
                             <a href="#sec-news" class="toc-link" data-section="sec-news">
                                 <span class="toc-num">03</span>
                                 <span class="toc-name" data-zh="宏观新闻" data-en="Macro & News">宏观新闻</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-news" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-news"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-news"></ul>
                             <a href="#sec-sentiment" class="toc-link" data-section="sec-sentiment">
                                 <span class="toc-num">04</span>
                                 <span class="toc-name" data-zh="市场情绪" data-en="Sentiment">市场情绪</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-sentiment" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-sentiment"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-sentiment"></ul>
                             <a href="#sec-debate" class="toc-link" data-section="sec-debate">
                                 <span class="toc-num">05</span>
                                 <span class="toc-name" data-zh="多空辩论" data-en="Debate">多空辩论</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-debate" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-debate"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-debate"></ul>
                             <a href="#sec-risk" class="toc-link" data-section="sec-risk">
                                 <span class="toc-num">06</span>
                                 <span class="toc-name" data-zh="风险控制" data-en="Risk Audit">风险控制</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-risk" aria-hidden="true"></span>
                                 <span class="toc-status-dot status-pending" id="toc-dot-risk"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-risk"></ul>
                             <a href="#sec-trader" class="toc-link" data-section="sec-trader">
                                 <span class="toc-num">07</span>
                                 <span class="toc-name" data-zh="交易方案" data-en="Execution">交易方案</span>
+                                <span class="toc-sentiment" data-sentiment-for="sec-trader" aria-hidden="true"></span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-trader"></ul>
                             <a href="#sec-raw" class="toc-link" data-section="sec-raw">
                                 <span class="toc-num">08</span>
                                 <span class="toc-name" data-zh="原始计划" data-en="Raw Draft">原始计划</span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-raw"></ul>
                             <a href="#sec-console" class="toc-link" data-section="sec-console">
                                 <span class="toc-num">09</span>
                                 <span class="toc-name" data-zh="运行日志" data-en="Console">运行日志</span>
                             </a>
+                            <ul class="toc-sublinks" data-sublinks-for="sec-console"></ul>
                             <button id="export-pdf-btn" class="export-pdf-btn" type="button" disabled style="width: 100%; text-align: left; padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border-color);">
                                 <span>■</span> <span data-zh="导出 PDF 报告" data-en="Export PDF Report">导出 PDF 报告</span>
                             </button>

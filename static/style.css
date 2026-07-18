@@ -3689,20 +3689,41 @@ body.theme-light .theme-icon-indicator {
     position: absolute;
     top: 0;
     right: 28px;
-    z-index: 100;
+    /* Below the TOC sidebar (mobile z 320, desktop z 150) so the chain
+       decoration never covers the "报告导航" header badge / close button. */
+    z-index: 90;
     width: 36px;
     height: 100px;
     cursor: pointer;
     user-select: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+/* When the mobile TOC bottom sheet is open the pull-chain would visually
+   hover on top of the panel — slide it out of view instead of relying
+   solely on z-order so the header badge is unambiguous. */
+body.toc-sheet-open .pull-chain-wrapper {
+    opacity: 0;
+    transform: translateY(-40px);
+    pointer-events: none;
 }
 
 @media (min-width: 1025px) {
     .pull-chain-wrapper {
         position: fixed;
         top: 0;
-        right: 40px;
-        z-index: 200;
+        /* Anchor to the far right edge of the viewport, past the TOC
+           sidebar (250px + its right margin) so the chain hangs in the
+           empty margin instead of overlapping the "报告导航" header /
+           decision badge. */
+        right: 8px;
+        /* Sit BELOW the TOC sidebar (z-index 150) so if the chain
+           overlaps the panel visually, it never steals the header
+           badge or the collapse button. */
+        z-index: 140;
     }
+    /* Extra breathing room in the TOC header so the badge stays clear
+       of the bulb no matter how narrow the viewport gets. */
+    .toc-sidebar .toc-header { padding-right: 40px; }
 }
 
 .pull-chain-string {
@@ -3879,4 +3900,138 @@ body.theme-light .pull-chain-bulb svg .bulb-filament {
 /* Clean fix for HTML5 [hidden] display override */
 .confidence-gauge[hidden] {
     display: none !important;
+}
+
+/* ==================================================================
+   Report TOC: per-section sentiment icon + auto-expanding sub-links.
+   ================================================================== */
+
+/* Sentiment icon (bull/bear/neutral) beside each nav item. */
+.toc-sentiment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: auto;                 /* pushes ahead of the status dot */
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 4px;
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: var(--font-mono);
+    font-weight: 800;
+    letter-spacing: 0;
+}
+.toc-sentiment.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+.toc-sentiment.bull {
+    background: rgba(46, 204, 113, 0.12);
+    color: #2ecc71;
+    box-shadow: inset 0 0 0 1px rgba(46, 204, 113, 0.35);
+}
+.toc-sentiment.bear {
+    background: rgba(231, 76, 60, 0.12);
+    color: #e74c3c;
+    box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.35);
+}
+.toc-sentiment.neutral {
+    background: rgba(127, 140, 141, 0.10);
+    color: #8b949e;
+    box-shadow: inset 0 0 0 1px rgba(127, 140, 141, 0.28);
+}
+/* Keep the status dot to the far right, sentiment lives just before it. */
+.toc-link .toc-status-dot { margin-left: 6px; }
+
+/* Auto-expanding sub-headings ---------------------------------------- */
+.toc-sublinks {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0 16px;
+    /* Collapse animation via grid rows: allows sizing "to content". */
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.25s ease,
+                margin 0.32s ease;
+    opacity: 0;
+}
+.toc-sublinks > .toc-sublinks-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+.toc-sublinks.open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+.toc-sublink {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 22px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-left: 1px solid var(--border-color);
+    transition: color 0.15s ease, border-left-color 0.15s ease, background 0.15s ease;
+    cursor: pointer;
+    letter-spacing: 0.2px;
+}
+.toc-sublink:hover {
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.03);
+}
+.toc-sublink.current {
+    color: var(--accent-pink, #FF2D55);
+    border-left-color: var(--accent-pink, #FF2D55);
+    font-weight: 600;
+}
+.toc-sublink .toc-sublink-marker {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+body.theme-light .toc-sublink:hover { background: rgba(0,0,0,0.03); }
+
+/* Server-side background execution notice */
+.persistence-notice {
+    margin: 16px 0 24px 0;
+    padding: 12px 18px;
+    background: rgba(79, 140, 255, 0.08);
+    border: 1px solid rgba(79, 140, 255, 0.2);
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.persistence-notice .notice-icon {
+    font-size: 16px;
+    line-height: 1.4;
+    user-select: none;
+}
+
+.persistence-notice .notice-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--accent-blue, #2F80FF);
+    font-weight: 500;
+}
+
+body.theme-light .persistence-notice {
+    background: rgba(47, 128, 255, 0.04);
+    border-color: rgba(47, 128, 255, 0.15);
+}
+
+body.theme-light .persistence-notice .notice-text {
+    color: #1f2937;
 }
