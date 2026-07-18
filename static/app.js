@@ -214,6 +214,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Exposed so the mobile topbar's back button (built in the separate
+    // initMobileUI() IIFE, which has no access to this closure's showView/
+    // welcomeView) can return to the welcome view. Without this the button
+    // called the undefined showView/welcomeView directly, threw a silent
+    // ReferenceError on click, and did nothing — the "no way back" bug.
+    window.__taShowWelcomeView = () => showView(welcomeView);
+
     function setSubmitting(isSubmitting) {
         currentlySubmitting = isSubmitting;
         // Stay disabled if the user is also out of report quota.
@@ -3097,7 +3104,12 @@ window.__taApplyTocSentiments = function(data) {
     const mobBackBtn = topbar.querySelector('#mob-back-btn');
     if (mobBackBtn) {
         mobBackBtn.addEventListener('click', () => {
-            showView(welcomeView);
+            // showView/welcomeView belong to the DOMContentLoaded closure,
+            // not this IIFE — go through the exposed global (see its
+            // definition for why calling them directly here silently failed).
+            if (typeof window.__taShowWelcomeView === "function") {
+                window.__taShowWelcomeView();
+            }
         });
     }
 

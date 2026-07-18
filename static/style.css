@@ -320,11 +320,14 @@ body {
 .history-item .hist-sym {
     font-weight: 700;
     font-size: 14px;
-    color: #ffffff;
+    /* was hardcoded #ffffff — invisible on the light theme's white
+       background. Theme-aware so it reads in both. */
+    color: var(--text-primary);
 }
 .history-item .hist-date {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
+    /* was hardcoded rgba(255,255,255,.45) — same light-theme problem. */
+    color: var(--text-muted);
     margin-left: 8px;
 }
 .history-item .hist-badge {
@@ -1932,7 +1935,9 @@ body {
     }
     .toc-collapse-btn:hover, .toc-collapse-btn:active {
         background: rgba(255, 255, 255, 0.15) !important;
-        color: #fff !important;
+        /* was hardcoded #fff — near-invisible (white on white) on the
+           light theme's close button. */
+        color: var(--text-primary) !important;
     }
     .toc-body {
         padding: 12px 18px 20px;
