@@ -369,6 +369,18 @@ body {
     flex-shrink: 0;
     white-space: nowrap;
 }
+.account-notif-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+.account-notif-btn:hover { border-color: var(--text-secondary); }
 .account-admin-link {
     font-size: 10.5px;
     font-weight: 700;
@@ -3456,15 +3468,18 @@ body.theme-light .rc-btn[aria-current="true"] { background: rgba(255,45,85,0.12)
     padding: 3px;
 }
 .depth-btn {
+    /* 2 lines (icon+label, then estimate) instead of 3 stacked lines —
+       this preset picker was eating too much of the sidebar's vertical
+       space at the history list's expense. */
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: 8px 4px;
+    gap: 1px;
+    padding: 5px 4px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 11.5px;
+    font-size: 11px;
     cursor: pointer;
     border-radius: 4px;
     transition: all 0.15s;
@@ -3476,9 +3491,15 @@ body.theme-light .rc-btn[aria-current="true"] { background: rgba(255,45,85,0.12)
     color: var(--text-primary);
     box-shadow: inset 0 0 0 1px rgba(79,140,255,0.4);
 }
-.depth-icon { font-size: 15px; line-height: 1; }
+.depth-main {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.depth-icon { font-size: 12.5px; line-height: 1; }
 .depth-est {
-    font-size: 9.5px;
+    font-size: 9px;
     color: var(--text-muted);
     font-family: var(--font-mono);
     letter-spacing: 0.3px;
@@ -3619,79 +3640,12 @@ body.theme-light .rc-btn[aria-current="true"] { background: rgba(255,45,85,0.12)
     gap: 8px;
 }
 
-.sidebar-settings-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: 100%;
-}
-
-.settings-row {
-    display: grid;
-    grid-template-columns: 36px 1fr;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-}
-
-.settings-label {
-    font-family: var(--font-mono, monospace);
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-}
-
-.segmented-control {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 2px;
-    gap: 2px;
-    width: 100%;
-}
-
-body.theme-light .segmented-control {
-    background: rgba(0, 0, 0, 0.03);
-}
-
-.segmented-control .rc-btn {
-    text-align: center;
-    padding: 6px 2px;
-    font-size: 10.5px;
-    border-radius: 4px;
-    background: transparent;
-    border: none;
-    width: 100%;
-    color: var(--text-secondary);
-}
-
-.segmented-control .rc-btn:hover {
-    color: var(--text-primary);
-}
-
-.segmented-control .rc-btn[aria-current="true"] {
-    background: var(--bg-layer, #141A21) !important;
-    color: var(--accent-pink, #ff2d55) !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-body.theme-light .segmented-control .rc-btn[aria-current="true"] {
-    background: #ffffff !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-/* Theme control row with pull chain */
-.theme-control-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-}
+/* .sidebar-settings-grid / .settings-row / .settings-label / .segmented-control
+   / .theme-control-wrapper (font-size + theme + notif rows) removed along
+   with the sidebar header markup that used them — each duplicated a control
+   that exists elsewhere (reader mode's font stepper; the pull-chain switch
+   below for theme), and they were crowding out the ticker form and history
+   list. */
 
 .theme-icon-indicator {
     display: inline-flex;
@@ -3851,25 +3805,8 @@ body.theme-light .pull-chain-ring::before {
     animation: pull-snap-back-string 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-/* Desktop notifications toggle button */
-.rc-btn.notif-btn {
-    border: 1px solid var(--border-color);
-    background: transparent;
-    padding: 4px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 11px;
-    margin-left: auto;
-    transition: background var(--od-duration-normal) var(--od-ease-out), color var(--od-duration-normal) var(--od-ease-out);
-}
-
-.rc-btn.notif-btn:hover {
-    background: rgba(255, 255, 255, 0.04);
-}
-
-body.theme-light .rc-btn.notif-btn:hover {
-    background: rgba(0, 0, 0, 0.04);
-}
+/* Desktop notifications toggle — moved to the account bar (.account-notif-btn,
+   styled near .account-logout-btn); the sidebar row it lived in was removed. */
 
 /* 渐变变天亮/天黑过渡 */
 body, 
