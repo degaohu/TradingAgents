@@ -2626,14 +2626,16 @@ function _rerenderHistory() {
                 }
                 return;
             }
-            // Opens as a floating dialog (see initHistoryReportDialog) once
-            // the report data has actually loaded, so the dialog doesn't
-            // pop open showing stale/previous content for a moment.
-            loadHistoryItem(item.ticker, item.trade_date).then(() => {
-                if (typeof window.__taOpenHistoryDialog === "function") {
-                    window.__taOpenHistoryDialog();
-                }
-            });
+            // Closing the enlarged history-list dialog (if open) before
+            // navigating — selecting a report should get you to it, not
+            // leave the list dialog sitting on top of it.
+            if (typeof window.__taCloseHistoryListDialog === "function") {
+                window.__taCloseHistoryListDialog();
+            }
+            loadHistoryItem(item.ticker, item.trade_date);
+            if (typeof window.__taSwitchMobileTab === "function") {
+                window.__taSwitchMobileTab("analyze");
+            }
         });
         listEl.appendChild(row);
     });
@@ -3223,28 +3225,31 @@ window.__taApplyTocSentiments = function(data) {
 
 })();
 
-// ── History report dialog ────────────────────────────────────────────
-// Opening a past report from the history list used to navigate away (the
-// mobile "analyze" tab, or just the shared results pane on desktop),
-// losing whatever you were browsing in history. This instead pops the
-// SAME #results-view element out into a centered floating dialog — same
-// rendering logic, zero duplication — and puts it right back where it
-// came from on close, so you land exactly back in the history list.
-(function initHistoryReportDialog() {
-    const resultsView = document.getElementById('results-view');
-    if (!resultsView) return;
+// ── History LIST dialog ──────────────────────────────────────────────
+// The history list lives in a narrow sidebar column, cramped for
+// browsing more than a couple of entries. The "⤢" button next to its
+// header pops the whole section (search box, star filter, list) out
+// into a bigger centered dialog — same rendering logic and click
+// behavior, zero duplication, just more room. Picking a report from
+// inside it closes the dialog and navigates as usual (see the row click
+// handler in _rerenderHistory, which calls __taCloseHistoryListDialog).
+(function initHistoryListDialog() {
+    const historySection = document.querySelector('.history-watchlist');
+    const expandBtn = document.getElementById('history-expand-btn');
+    if (!historySection || !expandBtn) return;
 
-    const homeParent = resultsView.parentNode;
-    const homeNext = resultsView.nextSibling;
+    const homeParent = historySection.parentNode;
+    const homeNext = historySection.nextSibling;
 
     const backdrop = document.createElement('div');
     backdrop.className = 'hist-dialog-backdrop';
     document.body.appendChild(backdrop);
 
     // Flex-centering wrapper — deliberately not the thing that animates or
-    // gets a transform (see the CSS comment on .hist-dialog-viewport for
-    // why: a transform on any ancestor of #results-view would break the
-    // position:fixed/sticky floating report-nav panel it contains).
+    // gets a transform (a transform here would make this the containing
+    // block for any position:fixed/sticky descendant of the dialog content;
+    // harmless for the plain history list today, but keeping the same safe
+    // pattern used for the report dialog in case that ever changes).
     const viewport = document.createElement('div');
     viewport.className = 'hist-dialog-viewport';
     document.body.appendChild(viewport);
@@ -3261,16 +3266,16 @@ window.__taApplyTocSentiments = function(data) {
     function openDialog() {
         if (isOpen) return;
         isOpen = true;
-        viewport.appendChild(resultsView);
-        resultsView.classList.add('as-dialog');
+        viewport.appendChild(historySection);
+        historySection.classList.add('as-list-dialog');
         // Force the browser to paint the pre-transition (small/faded) state
         // before adding the class that animates to full size — otherwise
         // the DOM-move and both class changes land in the same frame and
         // it just snaps open with no visible transition.
         // eslint-disable-next-line no-unused-expressions
-        resultsView.offsetHeight;
+        historySection.offsetHeight;
         requestAnimationFrame(() => {
-            resultsView.classList.add('dialog-visible');
+            historySection.classList.add('dialog-visible');
             backdrop.classList.add('visible');
             closeBtn.classList.add('visible');
         });
@@ -3279,27 +3284,27 @@ window.__taApplyTocSentiments = function(data) {
     function closeDialog() {
         if (!isOpen) return;
         isOpen = false;
-        resultsView.classList.remove('dialog-visible');
+        historySection.classList.remove('dialog-visible');
         backdrop.classList.remove('visible');
         closeBtn.classList.remove('visible');
         // Wait for the closing transition, then move it back and drop the
-        // dialog-only class so it renders in-flow again next time it's
-        // shown normally (e.g. a fresh analysis result).
+        // dialog-only class so it renders in-flow again in the sidebar.
         setTimeout(() => {
             if (isOpen) return; // reopened mid-transition — leave it alone
-            resultsView.classList.remove('as-dialog');
-            homeParent.insertBefore(resultsView, homeNext);
+            historySection.classList.remove('as-list-dialog');
+            homeParent.insertBefore(historySection, homeNext);
         }, 300);
     }
 
+    expandBtn.addEventListener('click', openDialog);
     backdrop.addEventListener('click', closeDialog);
     closeBtn.addEventListener('click', closeDialog);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isOpen) closeDialog();
     });
 
-    window.__taOpenHistoryDialog = openDialog;
-    window.__taCloseHistoryDialog = closeDialog;
+    window.__taOpenHistoryListDialog = openDialog;
+    window.__taCloseHistoryListDialog = closeDialog;
 })();
 
 // ══════════════════════════════════════════════════════════════════════

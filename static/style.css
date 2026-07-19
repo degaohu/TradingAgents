@@ -300,6 +300,23 @@ body {
     color: var(--text-secondary);
     text-transform: uppercase;
 }
+.history-expand-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+.history-expand-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
 .history-list {
     flex: 1;
     overflow-y: auto;
@@ -839,13 +856,14 @@ body {
     pointer-events: auto;
 }
 /* Full-viewport flex centering wrapper — deliberately NOT the thing that
-   animates. #results-view's own report content includes .toc-sidebar,
-   which uses position:fixed/sticky for the floating nav panel; giving
-   *any* ancestor of it a `transform` would make that ancestor the
-   containing block for those descendants (a CSS quirk — see the reader-
-   toolbar-left fix above for the same bug), breaking their positioning.
-   So centering happens via flexbox here, and the open/close animation
-   below only touches opacity + margin-top, never transform. */
+   animates. A `transform` on any ancestor of dialog content would make
+   that ancestor the containing block for any position:fixed/sticky
+   descendant inside it (a CSS quirk — see the reader-toolbar-left fix
+   above for the same bug), which would break positioning if the dialog
+   content ever grows one. So centering happens via flexbox here, and the
+   open/close animation below only touches opacity + margin-top, never
+   transform. Shared by both dialogs built on this chassis (history list,
+   and previously the report detail). */
 .hist-dialog-viewport {
     position: fixed;
     inset: 0;
@@ -856,35 +874,52 @@ body {
     padding: 24px;
     pointer-events: none;
 }
-#results-view.as-dialog {
-    /* .results-container's base flex:1 (sized for its normal .main-content
-       flex parent) would otherwise fight the explicit width/height here
-       inside this different (row-direction) flex parent. */
+
+/* History LIST dialog — the "⤢" next to "历史分析记录" pops the whole
+   section (search, star filter, list) out of the narrow sidebar column
+   into a roomier centered dialog for easier browsing. */
+.history-watchlist.as-list-dialog {
+    /* .history-watchlist's base flex:1 (sized for its normal sidebar flex
+       parent) would otherwise fight the explicit width/height here inside
+       this different (row-direction) flex parent. */
     flex: none;
     position: relative;
-    width: min(920px, 92vw);
-    height: min(86vh, 900px);
-    max-height: 86vh;
+    width: min(480px, 92vw);
+    height: min(78vh, 720px);
+    max-height: 78vh;
     border-radius: 18px;
     box-shadow: 0 30px 90px rgba(0,0,0,0.55);
     opacity: 0;
     margin-top: 16px;
-    padding: 24px 32px;
-    background: var(--bg-base);
+    background: var(--bg-layer);
+    border: 1px solid var(--border-color);
     pointer-events: auto;
     transition: opacity 0.28s ease, margin-top 0.28s cubic-bezier(.16,1,.3,1);
 }
-#results-view.as-dialog.dialog-visible {
+.history-watchlist.as-list-dialog.dialog-visible {
     opacity: 1;
     margin-top: 0;
 }
+/* The expand button is redundant once already expanded — the × close
+   button covers it, and clicking "expand" again inside the dialog would
+   be a confusing no-op. */
+.history-watchlist.as-list-dialog .history-expand-btn {
+    display: none;
+}
+/* Roomier rows while browsing in the dialog — the whole point of asking
+   for more space. */
+.history-watchlist.as-list-dialog .history-item {
+    padding: 12px 16px;
+}
+.history-watchlist.as-list-dialog .hist-sym {
+    font-size: 15px;
+}
 @media (max-width: 640px) {
     .hist-dialog-viewport { padding: 0; }
-    #results-view.as-dialog {
+    .history-watchlist.as-list-dialog {
         width: 100vw;
         height: 100vh;
         max-height: 100vh;
-        padding: 16px;
         border-radius: 0;
     }
 }
