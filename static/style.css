@@ -795,6 +795,100 @@ body {
     display: flex;
 }
 
+/* History report dialog (see initHistoryReportDialog in app.js): opening a
+   past report from the history list moves #results-view into a centered
+   floating card instead of navigating away, so closing it returns you to
+   exactly where you were browsing. */
+.hist-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 400;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.hist-dialog-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.hist-dialog-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 402;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: var(--bg-layer);
+    color: var(--text-primary);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, background 0.15s ease;
+}
+.hist-dialog-close:hover { background: var(--bg-card); }
+.hist-dialog-close.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+/* Full-viewport flex centering wrapper — deliberately NOT the thing that
+   animates. #results-view's own report content includes .toc-sidebar,
+   which uses position:fixed/sticky for the floating nav panel; giving
+   *any* ancestor of it a `transform` would make that ancestor the
+   containing block for those descendants (a CSS quirk — see the reader-
+   toolbar-left fix above for the same bug), breaking their positioning.
+   So centering happens via flexbox here, and the open/close animation
+   below only touches opacity + margin-top, never transform. */
+.hist-dialog-viewport {
+    position: fixed;
+    inset: 0;
+    z-index: 401;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    pointer-events: none;
+}
+#results-view.as-dialog {
+    /* .results-container's base flex:1 (sized for its normal .main-content
+       flex parent) would otherwise fight the explicit width/height here
+       inside this different (row-direction) flex parent. */
+    flex: none;
+    position: relative;
+    width: min(920px, 92vw);
+    height: min(86vh, 900px);
+    max-height: 86vh;
+    border-radius: 18px;
+    box-shadow: 0 30px 90px rgba(0,0,0,0.55);
+    opacity: 0;
+    margin-top: 16px;
+    padding: 24px 32px;
+    background: var(--bg-base);
+    pointer-events: auto;
+    transition: opacity 0.28s ease, margin-top 0.28s cubic-bezier(.16,1,.3,1);
+}
+#results-view.as-dialog.dialog-visible {
+    opacity: 1;
+    margin-top: 0;
+}
+@media (max-width: 640px) {
+    .hist-dialog-viewport { padding: 0; }
+    #results-view.as-dialog {
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        padding: 16px;
+        border-radius: 0;
+    }
+}
+
 .live-status-banner {
     background: rgba(10,132,255,0.08);
     border: 1px solid rgba(10,132,255,0.2);
@@ -3201,11 +3295,33 @@ body.modal-open { overflow: hidden; }
                 background-color 0.4s ease, 
                 border-color 0.4s ease;
 
-    /* Desktop centering */
+    /* Desktop centering — margin-auto rather than left:50%+transform:
+       translateX(-50%). A `transform` here would make this element the
+       *containing block* for any position:fixed descendant (a CSS quirk),
+       which is exactly what broke .reader-toolbar-left's attempt to fix
+       itself to the real viewport corner below. */
     width: max-content;
     max-width: 95%;
-    left: 50%;
-    transform: translate3d(-50%, 0, 0);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* The "back to dashboard" button used to just be the first flex item in
+   the centered toolbar pill above, so it ended up wherever that pill
+   happened to center rather than at the page's actual top-left corner.
+   Pull it out of that flex flow (fixed positioning removes it regardless
+   of its flex parent) and anchor it to the real corner, always visible
+   independent of the settings pill's own scroll-hide behavior. Desktop
+   only — mobile's toolbar already stacks it as the first full-width row
+   (see the max-width:768px block below), which reads fine as-is. */
+@media (min-width: 769px) {
+    #results-view.editorial-reader-mode .reader-toolbar-left {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        z-index: 250;
+        margin: 0;
+    }
 }
 
 .reader-btn {

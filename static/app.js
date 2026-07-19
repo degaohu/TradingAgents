@@ -2626,10 +2626,14 @@ function _rerenderHistory() {
                 }
                 return;
             }
-            loadHistoryItem(item.ticker, item.trade_date);
-            if (typeof window.__taSwitchMobileTab === "function") {
-                window.__taSwitchMobileTab("analyze");
-            }
+            // Opens as a floating dialog (see initHistoryReportDialog) once
+            // the report data has actually loaded, so the dialog doesn't
+            // pop open showing stale/previous content for a moment.
+            loadHistoryItem(item.ticker, item.trade_date).then(() => {
+                if (typeof window.__taOpenHistoryDialog === "function") {
+                    window.__taOpenHistoryDialog();
+                }
+            });
         });
         listEl.appendChild(row);
     });
@@ -3217,6 +3221,85 @@ window.__taApplyTocSentiments = function(data) {
         placeConfigForm();
     });
 
+})();
+
+// ── History report dialog ────────────────────────────────────────────
+// Opening a past report from the history list used to navigate away (the
+// mobile "analyze" tab, or just the shared results pane on desktop),
+// losing whatever you were browsing in history. This instead pops the
+// SAME #results-view element out into a centered floating dialog — same
+// rendering logic, zero duplication — and puts it right back where it
+// came from on close, so you land exactly back in the history list.
+(function initHistoryReportDialog() {
+    const resultsView = document.getElementById('results-view');
+    if (!resultsView) return;
+
+    const homeParent = resultsView.parentNode;
+    const homeNext = resultsView.nextSibling;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'hist-dialog-backdrop';
+    document.body.appendChild(backdrop);
+
+    // Flex-centering wrapper — deliberately not the thing that animates or
+    // gets a transform (see the CSS comment on .hist-dialog-viewport for
+    // why: a transform on any ancestor of #results-view would break the
+    // position:fixed/sticky floating report-nav panel it contains).
+    const viewport = document.createElement('div');
+    viewport.className = 'hist-dialog-viewport';
+    document.body.appendChild(viewport);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'hist-dialog-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    document.body.appendChild(closeBtn);
+
+    let isOpen = false;
+
+    function openDialog() {
+        if (isOpen) return;
+        isOpen = true;
+        viewport.appendChild(resultsView);
+        resultsView.classList.add('as-dialog');
+        // Force the browser to paint the pre-transition (small/faded) state
+        // before adding the class that animates to full size — otherwise
+        // the DOM-move and both class changes land in the same frame and
+        // it just snaps open with no visible transition.
+        // eslint-disable-next-line no-unused-expressions
+        resultsView.offsetHeight;
+        requestAnimationFrame(() => {
+            resultsView.classList.add('dialog-visible');
+            backdrop.classList.add('visible');
+            closeBtn.classList.add('visible');
+        });
+    }
+
+    function closeDialog() {
+        if (!isOpen) return;
+        isOpen = false;
+        resultsView.classList.remove('dialog-visible');
+        backdrop.classList.remove('visible');
+        closeBtn.classList.remove('visible');
+        // Wait for the closing transition, then move it back and drop the
+        // dialog-only class so it renders in-flow again next time it's
+        // shown normally (e.g. a fresh analysis result).
+        setTimeout(() => {
+            if (isOpen) return; // reopened mid-transition — leave it alone
+            resultsView.classList.remove('as-dialog');
+            homeParent.insertBefore(resultsView, homeNext);
+        }, 300);
+    }
+
+    backdrop.addEventListener('click', closeDialog);
+    closeBtn.addEventListener('click', closeDialog);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isOpen) closeDialog();
+    });
+
+    window.__taOpenHistoryDialog = openDialog;
+    window.__taCloseHistoryDialog = closeDialog;
 })();
 
 // ══════════════════════════════════════════════════════════════════════
