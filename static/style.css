@@ -3196,6 +3196,14 @@ body.modal-open { overflow: hidden; }
     font-weight: 700;
 }
 
+/* The base .markdown-content em rule colors text with --text-primary,
+   which is the dashboard's near-white dark-theme text color — invisible
+   against reader mode's light "paper"/"white" backgrounds since reader
+   mode has its own --r-text variable that rule never picks up. */
+#results-view.editorial-reader-mode .markdown-content em {
+    color: var(--r-text) !important;
+}
+
 #results-view.editorial-reader-mode .markdown-content a {
     color: var(--accent-blue) !important;
     text-decoration: underline;
