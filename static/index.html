@@ -368,39 +368,6 @@
                             <span class="btn-text-lang" data-zh="社论阅读模式" data-en="Reader View">社论阅读模式</span>
                         </button>
                     </div>
-                    <div class="reader-toolbar-right" id="reader-settings-panel" style="display: none;">
-                        <!-- Font Size Selector -->
-                        <div class="reader-setting-group">
-                            <span class="setting-label" data-zh="字号" data-en="Size">字号</span>
-                            <button id="reader-font-dec" class="setting-btn" type="button" aria-label="Decrease Font Size">A-</button>
-                            <button id="reader-font-inc" class="setting-btn" type="button" aria-label="Increase Font Size">A+</button>
-                        </div>
-                        <!-- Font Family Selector -->
-                        <div class="reader-setting-group">
-                            <span class="setting-label" data-zh="字体" data-en="Font">字体</span>
-                            <button id="reader-font-serif" class="setting-btn active" type="button" data-zh="雅致衬线" data-en="Serif">雅致衬线</button>
-                            <button id="reader-font-sans" class="setting-btn" type="button" data-zh="现代极简" data-en="Sans">现代极简</button>
-                        </div>
-                        <!-- Theme Selector -->
-                        <div class="reader-setting-group">
-                            <span class="setting-label" data-zh="主题" data-en="Theme">主题</span>
-                            <button id="reader-theme-paper" class="setting-btn theme-dot paper active" type="button" title="Warm Paper" aria-label="Warm Paper"></button>
-                            <button id="reader-theme-white" class="setting-btn theme-dot white" type="button" title="Pure White" aria-label="Pure White"></button>
-                            <button id="reader-theme-dark" class="setting-btn theme-dot dark" type="button" title="Dark Dashboard" aria-label="Dark Dashboard"></button>
-                        </div>
-                        <!-- Speech Synthesis (TTS) Controls -->
-                        <div class="reader-setting-group tts-group">
-                            <span class="setting-label" data-zh="朗读" data-en="Read">朗读</span>
-                            <button id="tts-play-btn" class="setting-btn tts-btn" type="button" data-zh="▶ 播放" data-en="▶ Play">▶ 播放</button>
-                            <button id="tts-stop-btn" class="setting-btn tts-btn" type="button" disabled data-zh="⏹ 停止" data-en="⏹ Stop">⏹ 停止</button>
-                            <select id="tts-speed-select" class="tts-speed-select" aria-label="Voice Speed">
-                                <option value="0.8">0.8x</option>
-                                <option value="1" selected>1.0x</option>
-                                <option value="1.25">1.25x</option>
-                                <option value="1.5">1.5x</option>
-                            </select>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Apple-style Waterfall Long Report Workspace -->
@@ -665,6 +632,43 @@
                             <button class="toc-collapse-btn" id="toc-collapse-btn" type="button" aria-label="Close">×</button>
                         </div>
                         <div class="toc-body" id="toc-body">
+                        <!-- Reader Mode Settings (font/theme/TTS) — merged into the
+                             report nav sidebar so it doesn't need its own floating
+                             toolbar row. Only shown while reader mode is active;
+                             see initEditorialReaderMode() in app.js. -->
+                        <div class="toc-reader-settings" id="reader-settings-panel" style="display: none;">
+                            <!-- Font Size Selector -->
+                            <div class="reader-setting-group">
+                                <span class="setting-label" data-zh="字号" data-en="Size">字号</span>
+                                <button id="reader-font-dec" class="setting-btn" type="button" aria-label="Decrease Font Size">A-</button>
+                                <button id="reader-font-inc" class="setting-btn" type="button" aria-label="Increase Font Size">A+</button>
+                            </div>
+                            <!-- Font Family Selector -->
+                            <div class="reader-setting-group">
+                                <span class="setting-label" data-zh="字体" data-en="Font">字体</span>
+                                <button id="reader-font-serif" class="setting-btn active" type="button" data-zh="雅致衬线" data-en="Serif">雅致衬线</button>
+                                <button id="reader-font-sans" class="setting-btn" type="button" data-zh="现代极简" data-en="Sans">现代极简</button>
+                            </div>
+                            <!-- Theme Selector -->
+                            <div class="reader-setting-group">
+                                <span class="setting-label" data-zh="主题" data-en="Theme">主题</span>
+                                <button id="reader-theme-paper" class="setting-btn theme-dot paper active" type="button" title="Warm Paper" aria-label="Warm Paper"></button>
+                                <button id="reader-theme-white" class="setting-btn theme-dot white" type="button" title="Pure White" aria-label="Pure White"></button>
+                                <button id="reader-theme-dark" class="setting-btn theme-dot dark" type="button" title="Dark Dashboard" aria-label="Dark Dashboard"></button>
+                            </div>
+                            <!-- Speech Synthesis (TTS) Controls -->
+                            <div class="reader-setting-group tts-group">
+                                <span class="setting-label" data-zh="朗读" data-en="Read">朗读</span>
+                                <button id="tts-play-btn" class="setting-btn tts-btn" type="button" data-zh="▶ 播放" data-en="▶ Play">▶ 播放</button>
+                                <button id="tts-stop-btn" class="setting-btn tts-btn" type="button" disabled data-zh="⏹ 停止" data-en="⏹ Stop">⏹ 停止</button>
+                                <select id="tts-speed-select" class="tts-speed-select" aria-label="Voice Speed">
+                                    <option value="0.8">0.8x</option>
+                                    <option value="1" selected>1.0x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.5x</option>
+                                </select>
+                            </div>
+                        </div>
                         <!-- Decision Snapshot (populated by displayResults) -->
 
                         <nav class="toc-nav">

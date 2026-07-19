@@ -3107,7 +3107,13 @@ body.modal-open { overflow: hidden; }
     border: 1px solid var(--r-border) !important;
     border-radius: 16px;
     box-shadow: 0 30px 100px rgba(0, 0, 0, 0.04) !important;
-    max-width: 840px;
+    /* flex:1 fills whatever space is actually available next to the TOC
+       sidebar (matches the non-reader-mode layout); the max-width just
+       stops it growing absurdly wide on ultra-wide monitors. Used to be a
+       flat 840px regardless of viewport, which left large dead margins on
+       normal desktop widths. */
+    flex: 1 1 auto;
+    max-width: 1180px;
     margin: 0 auto;
     padding: 48px 64px;
     box-sizing: border-box;
@@ -3270,13 +3276,14 @@ body.modal-open { overflow: hidden; }
     border: 1px solid var(--r-border) !important;
     color: var(--r-text) !important;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02) !important;
-    opacity: 0.5;
-}
-#results-view.editorial-reader-mode .toc-sidebar:hover {
-    opacity: 1.0;
+    opacity: 1;
 }
 
 #results-view.editorial-reader-mode .toc-header {
+    border-bottom-color: var(--r-border) !important;
+}
+
+#results-view.editorial-reader-mode .toc-reader-settings {
     border-bottom-color: var(--r-border) !important;
 }
 
@@ -3357,6 +3364,16 @@ body.modal-open { overflow: hidden; }
         z-index: 250;
         margin: 0;
     }
+    /* The font/theme/TTS settings that used to live here moved into
+       .toc-sidebar (merged with the report nav — see .toc-reader-settings).
+       With only the back button left, and that button pulled out of flow
+       via position:fixed above, this wrapper has no in-flow content on
+       desktop; collapse it instead of rendering an empty floating capsule
+       (it still had the sticky/background/border/padding from the rule
+       below, which used to be the settings pill's own chrome). */
+    #results-view.editorial-reader-mode .reader-toolbar {
+        display: contents;
+    }
 }
 
 .reader-btn {
@@ -3394,28 +3411,28 @@ body.modal-open { overflow: hidden; }
     opacity: 0.75;
 }
 
-.reader-toolbar-right {
+/* Reader settings now live inside .toc-sidebar (merged with the report
+   nav) instead of their own floating toolbar row. Groups stack vertically
+   at the sidebar's ~250px width; each label forces onto its own line via
+   flex-basis so the group's controls wrap onto the row below it. */
+.toc-reader-settings {
     display: flex;
-    align-items: center;
-    gap: 12px; /* smaller gap */
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .reader-setting-group {
     display: flex;
     align-items: center;
-    gap: 4px; /* tighter spacing */
-    border-right: 1px solid var(--border-color);
-    padding-right: 12px;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-#results-view.editorial-reader-mode .reader-setting-group {
-    border-right-color: var(--r-border) !important;
-}
-
-.reader-setting-group:last-child {
-    border-right: none;
-    padding-right: 0;
+.reader-setting-group .setting-label {
+    flex-basis: 100%;
 }
 
 .setting-label {
@@ -3507,6 +3524,24 @@ body.modal-open { overflow: hidden; }
     background: #090B0F !important;
 }
 
+/* .setting-btn's reader-mode override above flattens every button to a
+   transparent pill (needed for the plain text buttons), but at equal
+   specificity it also stomps the theme dots' round shape and per-theme
+   fill color. Reassert them here, after that rule, so the dots stay
+   visible circles instead of invisible pills. */
+#results-view.editorial-reader-mode .theme-dot {
+    border-radius: 50% !important;
+    padding: 0 !important;
+    border-width: 1.5px !important;
+    border-color: var(--r-border) !important;
+}
+#results-view.editorial-reader-mode .theme-dot.active {
+    border-color: var(--r-text) !important;
+}
+#results-view.editorial-reader-mode .theme-dot.paper { background: #F4F0E6 !important; }
+#results-view.editorial-reader-mode .theme-dot.white { background: #FFFFFF !important; }
+#results-view.editorial-reader-mode .theme-dot.dark  { background: #090B0F !important; }
+
 /* TTS Player Speeds */
 .tts-speed-select {
     background: transparent;
@@ -3545,7 +3580,9 @@ body.modal-open { overflow: hidden; }
     color: var(--r-muted) !important;
 }
 
-/* Mobile responsive fixes for toolbar */
+/* Mobile responsive fixes for toolbar. The settings panel no longer lives
+   here (moved into .toc-sidebar, reached via the bottom sheet on mobile —
+   see initReportNav()), so this only needs to lay out the back button. */
 @media (max-width: 768px) {
     #results-view.editorial-reader-mode .reader-toolbar {
         position: static !important;
@@ -3555,26 +3592,8 @@ body.modal-open { overflow: hidden; }
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 auto 24px auto !important;
-        flex-direction: column;
-        align-items: stretch;
         padding: 12px 16px;
         border-radius: 16px;
-    }
-    .reader-toolbar-right {
-        justify-content: space-between;
-        gap: 12px;
-    }
-    .reader-setting-group {
-        border-right: none;
-        padding-right: 0;
-        flex: 1;
-        justify-content: center;
-    }
-    .tts-group {
-        flex-basis: 100%;
-        margin-top: 8px;
-        border-top: 1px solid var(--border-color);
-        padding-top: 12px;
     }
     #results-view.editorial-reader-mode .report-flow-container {
         padding: 16px 12px;
