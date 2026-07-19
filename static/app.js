@@ -220,6 +220,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // ReferenceError on click, and did nothing — the "no way back" bug.
     window.__taShowWelcomeView = () => showView(welcomeView);
 
+    // Desktop's way back to ticker selection while a report is showing —
+    // reader mode (now always on whenever results are on screen) hides
+    // #config-form for distraction-free reading, so this is the only path
+    // back to it there. Mobile doesn't need this: its own topbar back
+    // button (#mob-back-btn) already covers the same case.
+    const readerBackBtn = document.getElementById("reader-back-btn");
+    if (readerBackBtn) {
+        readerBackBtn.addEventListener("click", () => window.__taShowWelcomeView());
+    }
+
     function setSubmitting(isSubmitting) {
         currentlySubmitting = isSubmitting;
         // Stay disabled if the user is also out of report quota.

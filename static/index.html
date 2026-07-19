@@ -255,6 +255,18 @@
 
             <!-- Results View -->
             <div id="results-view" class="results-container">
+                <!-- Desktop-only way back to ticker selection: reader mode
+                     hides the sidebar/config form for distraction-free
+                     reading (see body.reader-mode-active in style.css), and
+                     there's no other affordance to get it back on desktop.
+                     Mobile already has its own back button in the topbar
+                     (#mob-back-btn, injected by initMobileUI()), so this one
+                     is hidden there. -->
+                <button id="reader-back-btn" class="reader-back-btn no-print" type="button">
+                    <span class="btn-icon">←</span>
+                    <span class="btn-text-lang" data-zh="重新选择" data-en="Back">重新选择</span>
+                </button>
+
                 <!-- Live Status Banner -->
                 <div id="live-status-banner" class="live-status-banner" style="display:none;">
                     <span class="live-dot"></span>

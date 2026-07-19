@@ -812,6 +812,38 @@ body {
     display: flex;
 }
 
+/* Reader mode hides #config-form/.sidebar-config for distraction-free
+   reading (see body.reader-mode-active below) — this is the only way back
+   to it on desktop. Mobile already has its own back button in the topbar
+   (#mob-back-btn), so this one only shows at desktop widths. */
+.reader-back-btn {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--r-text, var(--text-primary));
+    transition: opacity 0.2s ease;
+}
+.reader-back-btn:hover {
+    opacity: 0.75;
+}
+@media (min-width: 769px) {
+    .reader-back-btn {
+        display: inline-flex;
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        z-index: 250;
+    }
+}
+
 /* History report dialog (see initHistoryReportDialog in app.js): opening a
    past report from the history list moves #results-view into a centered
    floating card instead of navigating away, so closing it returns you to
