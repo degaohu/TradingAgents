@@ -72,7 +72,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const errorBanner   = document.getElementById("loading-error-banner");
     const errorMessage  = document.getElementById("loading-error-message");
     const exportPdfBtn  = document.getElementById("export-pdf-btn");
-    const sidebarReaderBtn = document.getElementById("sidebar-reader-btn");
     const sendEmailBtn = document.getElementById("send-email-btn");
     const reportEmailInput = document.getElementById("report-email-input");
     const emailStatusMsg = document.getElementById("email-status-msg");
@@ -576,14 +575,6 @@ document.addEventListener("DOMContentLoaded", () => {
             label.textContent = originalLabel;
         }
     });
-
-    // Sidebar Reader button click handler
-    if (sidebarReaderBtn) {
-        sidebarReaderBtn.addEventListener("click", () => {
-            readerActive = !readerActive;
-            applySettings();
-        });
-    }
 
     // Send email button click handler
     if (sendEmailBtn) {
@@ -1725,31 +1716,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ── 9. Editorial Reader Mode & Text-to-Speech Broadcaster ─────────
+    // Reader mode is the only way reports are displayed now — there is no
+    // separate "dashboard" rendering to switch back to — so this always
+    // applies once a report is on screen instead of gating on a toggle.
     (function initEditorialReaderMode() {
-        const toggleBtn = document.getElementById("toggle-reader-mode-btn");
         const settingsPanel = document.getElementById("reader-settings-panel");
         const resultsView = document.getElementById("results-view");
-        
+
         // Font buttons
         const decFontBtn = document.getElementById("reader-font-dec");
         const incFontBtn = document.getElementById("reader-font-inc");
         const serifFontBtn = document.getElementById("reader-font-serif");
         const sansFontBtn = document.getElementById("reader-font-sans");
-        
+
         // Theme dots
         const themePaper = document.getElementById("reader-theme-paper");
         const themeWhite = document.getElementById("reader-theme-white");
         const themeDark = document.getElementById("reader-theme-dark");
-        
+
         // TTS buttons
         const ttsPlayBtn = document.getElementById("tts-play-btn");
         const ttsStopBtn = document.getElementById("tts-stop-btn");
         const ttsSpeedSelect = document.getElementById("tts-speed-select");
 
-        if (!toggleBtn || !resultsView) return;
+        if (!resultsView) return;
 
         // --- Preferences and Settings ---
-        let readerActive = localStorage.getItem("tradingagents.reader.active") === "true";
         let fontSize = parseInt(localStorage.getItem("tradingagents.reader.fontSize") || "17", 10);
         let fontFamily = localStorage.getItem("tradingagents.reader.fontFamily") || "serif";
         let currentTheme = localStorage.getItem("tradingagents.reader.theme") || "paper";
@@ -1759,36 +1751,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const MAX_FONT = 24;
 
         function applySettings() {
-            // Reader mode hides the sidebar/config for distraction-free
-            // reading — but it must ONLY do so while a report is actually on
-            // screen. Otherwise a saved "reader on" preference would hide the
-            // sidebar on the welcome view after a reload/re-login, leaving the
-            // user stuck with no way to enter a ticker (the "menu 不出现" bug).
+            // Only active once a report is actually on screen — never on
+            // the welcome/loading view, so the sidebar/config form stays
+            // reachable there (the "menu 不出现" bug this used to guard
+            // against was a saved on/off preference; there's no such
+            // preference to save now, but the same view check still keeps
+            // reader styling out of the welcome view).
             const resultsActive = resultsView.classList.contains("active");
-            const effectiveReader = readerActive && resultsActive;
-            resultsView.classList.toggle("editorial-reader-mode", effectiveReader);
-            document.body.classList.toggle("reader-mode-active", effectiveReader);
-            settingsPanel.style.display = effectiveReader ? "flex" : "none";
+            resultsView.classList.toggle("editorial-reader-mode", resultsActive);
+            document.body.classList.toggle("reader-mode-active", resultsActive);
+            settingsPanel.style.display = resultsActive ? "flex" : "none";
 
-            // Update toggle button text based on state and current language
-            const btnTextEl = toggleBtn.querySelector(".btn-text-lang");
-            const btnIconEl = toggleBtn.querySelector(".btn-icon");
-            if (btnIconEl) {
-                btnIconEl.textContent = readerActive ? "←" : "📰";
-            }
-            if (btnTextEl) {
-                if (readerActive) {
-                    btnTextEl.setAttribute("data-zh", "返回仪表盘模式");
-                    btnTextEl.setAttribute("data-en", "Dashboard View");
-                    btnTextEl.textContent = currentLang === "zh" ? "返回仪表盘模式" : "Dashboard View";
-                } else {
-                    btnTextEl.setAttribute("data-zh", "社论阅读模式");
-                    btnTextEl.setAttribute("data-en", "Reader View");
-                    btnTextEl.textContent = currentLang === "zh" ? "社论阅读模式" : "Reader View";
-                }
-            }
-
-            if (readerActive) {
+            if (resultsActive) {
                 // Apply font size
                 document.documentElement.style.setProperty("--r-font-size", fontSize + "px");
 
@@ -1856,13 +1830,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 setTimeout(window.__taSyncActiveSection, 50);
             }
         }
-
-        // Toggle action
-        toggleBtn.addEventListener("click", () => {
-            readerActive = !readerActive;
-            localStorage.setItem("tradingagents.reader.active", String(readerActive));
-            applySettings();
-        });
 
         // Font Adjustments
         decFontBtn.addEventListener("click", () => {

@@ -858,12 +858,13 @@ body {
 /* Full-viewport flex centering wrapper — deliberately NOT the thing that
    animates. A `transform` on any ancestor of dialog content would make
    that ancestor the containing block for any position:fixed/sticky
-   descendant inside it (a CSS quirk — see the reader-toolbar-left fix
-   above for the same bug), which would break positioning if the dialog
-   content ever grows one. So centering happens via flexbox here, and the
-   open/close animation below only touches opacity + margin-top, never
-   transform. Shared by both dialogs built on this chassis (history list,
-   and previously the report detail). */
+   descendant inside it (a CSS quirk that once broke a fixed-position back
+   button whose centered ancestor used transform for centering instead of
+   margin:auto), which would break positioning if the dialog content ever
+   grows one. So centering happens via flexbox here, and the open/close
+   animation below only touches opacity + margin-top, never transform.
+   Shared by both dialogs built on this chassis (history list, and
+   previously the report detail). */
 .hist-dialog-viewport {
     position: fixed;
     inset: 0;
@@ -3326,99 +3327,6 @@ body.modal-open { overflow: hidden; }
     border-radius: 16px;
 }
 
-/* ── Reader Mode Sticky Floating Pill Toolbar Styling ── */
-#results-view.editorial-reader-mode .reader-toolbar {
-    position: sticky;
-    top: 16px;
-    z-index: 201;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: var(--r-card) !important;
-    border: 1px solid var(--r-border) !important;
-    border-radius: 40px; /* Modern capsule shape */
-    padding: 5px 16px; /* tightly compressed padding */
-    margin-bottom: 32px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05) !important;
-    transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), 
-                opacity 0.35s cubic-bezier(0.25, 1, 0.5, 1),
-                background-color 0.4s ease, 
-                border-color 0.4s ease;
-
-    /* Desktop centering — margin-auto rather than left:50%+transform:
-       translateX(-50%). A `transform` here would make this element the
-       *containing block* for any position:fixed descendant (a CSS quirk),
-       which is exactly what broke .reader-toolbar-left's attempt to fix
-       itself to the real viewport corner below. */
-    width: max-content;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-/* The "back to dashboard" button used to just be the first flex item in
-   the centered toolbar pill above, so it ended up wherever that pill
-   happened to center rather than at the page's actual top-left corner.
-   Pull it out of that flex flow (fixed positioning removes it regardless
-   of its flex parent) and anchor it to the real corner, always visible
-   independent of the settings pill's own scroll-hide behavior. Desktop
-   only — mobile's toolbar already stacks it as the first full-width row
-   (see the max-width:768px block below), which reads fine as-is. */
-@media (min-width: 769px) {
-    #results-view.editorial-reader-mode .reader-toolbar-left {
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        z-index: 250;
-        margin: 0;
-    }
-    /* The font/theme/TTS settings that used to live here moved into
-       .toc-sidebar (merged with the report nav — see .toc-reader-settings).
-       With only the back button left, and that button pulled out of flow
-       via position:fixed above, this wrapper has no in-flow content on
-       desktop; collapse it instead of rendering an empty floating capsule
-       (it still had the sticky/background/border/padding from the rule
-       below, which used to be the settings pill's own chrome). */
-    #results-view.editorial-reader-mode .reader-toolbar {
-        display: contents;
-    }
-}
-
-.reader-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--border-color);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    background: rgba(255,255,255,0.05);
-    color: var(--text-color, #fff);
-    transition: all 0.2s ease;
-}
-
-.reader-btn.primary {
-    background: var(--accent-color, #2F80FF);
-    color: #fff;
-    border: none;
-}
-
-#results-view.editorial-reader-mode .reader-btn {
-    border: none !important;
-    background: transparent !important;
-    color: var(--r-text) !important;
-    font-weight: 500;
-    box-shadow: none !important;
-    transform: none !important;
-}
-
-#results-view.editorial-reader-mode .reader-btn:hover {
-    opacity: 0.75;
-}
-
 /* Reader settings now live inside .toc-sidebar (merged with the report
    nav) instead of their own floating toolbar row. Groups stack vertically
    at the sidebar's ~250px width; each label forces onto its own line via
@@ -3588,21 +3496,7 @@ body.modal-open { overflow: hidden; }
     color: var(--r-muted) !important;
 }
 
-/* Mobile responsive fixes for toolbar. The settings panel no longer lives
-   here (moved into .toc-sidebar, reached via the bottom sheet on mobile —
-   see initReportNav()), so this only needs to lay out the back button. */
 @media (max-width: 768px) {
-    #results-view.editorial-reader-mode .reader-toolbar {
-        position: static !important;
-        transform: none !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 auto 24px auto !important;
-        padding: 12px 16px;
-        border-radius: 16px;
-    }
     #results-view.editorial-reader-mode .report-flow-container {
         padding: 16px 12px;
     }
