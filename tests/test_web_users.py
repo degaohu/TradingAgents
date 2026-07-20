@@ -75,7 +75,7 @@ class TestPasswordHashing:
 
     def test_hash_password_round_trips_through_verify(self):
         pw_hash = users.hash_password("correct horse battery staple")
-        assert users.create_verified_user("newbie", pw_hash, "newbie@example.com") is True
+        assert users.create_verified_user("newbie", pw_hash, "+14165550001") is True
         assert users.verify("newbie", "correct horse battery staple") is True
         assert users.verify("newbie", "wrong password") is False
 
@@ -89,7 +89,7 @@ class TestPasswordHashing:
 
     def test_plaintext_and_hashed_rows_coexist_and_both_verify(self):
         pw_hash = users.hash_password("s3cur3-passw0rd")
-        users.create_verified_user("hasheduser", pw_hash, "hashed@example.com")
+        users.create_verified_user("hasheduser", pw_hash, "+14165550002")
         assert users.verify("admin", "pw-admin") is True          # legacy plaintext
         assert users.verify("hasheduser", "s3cur3-passw0rd") is True  # hashed
 
@@ -98,34 +98,33 @@ class TestPasswordHashing:
 class TestCreateVerifiedUser:
     def test_creates_non_admin_by_default(self):
         pw_hash = users.hash_password("whatever123")
-        assert users.create_verified_user("freshuser", pw_hash, "fresh@example.com") is True
+        assert users.create_verified_user("freshuser", pw_hash, "+14165550003") is True
         assert users.is_admin("freshuser") is False
         assert users.exists("freshuser") is True
 
     def test_rejects_duplicate_username(self):
         pw_hash = users.hash_password("whatever123")
-        assert users.create_verified_user("dupe", pw_hash, "dupe1@example.com") is True
-        assert users.create_verified_user("dupe", pw_hash, "dupe2@example.com") is False
+        assert users.create_verified_user("dupe", pw_hash, "+14165550004") is True
+        assert users.create_verified_user("dupe", pw_hash, "+14165550005") is False
 
     def test_rejects_missing_fields(self):
-        assert users.create_verified_user("", "hash", "a@b.com") is False
-        assert users.create_verified_user("user", "", "a@b.com") is False
+        assert users.create_verified_user("", "hash", "+14165550006") is False
+        assert users.create_verified_user("user", "", "+14165550006") is False
         assert users.create_verified_user("user", "hash", "") is False
 
 
 @pytest.mark.unit
-class TestEmail:
-    def test_email_exists_is_case_insensitive(self):
+class TestPhone:
+    def test_phone_exists(self):
         pw_hash = users.hash_password("whatever123")
-        users.create_verified_user("emailuser", pw_hash, "Someone@Example.com")
-        assert users.email_exists("someone@example.com") is True
-        assert users.email_exists("SOMEONE@EXAMPLE.COM") is True
-        assert users.email_exists("nobody@example.com") is False
+        users.create_verified_user("phoneuser", pw_hash, "+14165550007")
+        assert users.phone_exists("+14165550007") is True
+        assert users.phone_exists("+14165559999") is False
 
-    def test_all_users_carries_email_and_defaults_to_none_for_seed_users(self):
+    def test_all_users_carries_phone_and_defaults_to_none_for_seed_users(self):
         rows = {u["username"]: u for u in users.all_users()}
-        assert rows["admin"]["email"] is None
+        assert rows["admin"]["phone"] is None
         pw_hash = users.hash_password("whatever123")
-        users.create_verified_user("withemail", pw_hash, "with@example.com")
+        users.create_verified_user("withphone", pw_hash, "+14165550008")
         rows = {u["username"]: u for u in users.all_users()}
-        assert rows["withemail"]["email"] == "with@example.com"
+        assert rows["withphone"]["phone"] == "+14165550008"

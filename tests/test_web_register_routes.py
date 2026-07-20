@@ -1,8 +1,11 @@
-"""Integration tests for the self-registration + email-verification flow:
-POST /api/register, GET /verify-email, POST /api/register/resend.
+"""Integration tests for the self-registration + phone-verification flow:
+POST /api/register, POST /api/register/verify-code, POST /api/register/resend.
 
-SMTP is never actually exercised — mailer.send_email is monkeypatched to
-capture what would have been sent instead of hitting a real server.
+Twilio is never actually called — smsverify.start_verification/
+check_verification are monkeypatched with an in-memory fake that mimics
+Twilio Verify's behavior (one active code per phone number, wrong code
+fails, right code approves and consumes it) closely enough to exercise the
+real endpoint logic without a network dependency.
 """
 
 from __future__ import annotations
@@ -11,22 +14,36 @@ import pytest
 from fastapi.testclient import TestClient
 
 import web.routes as routes_module
-from web import mailer, quota, registration, users
+from web import quota, smsverify, users
 from web.jobs import JobRegistry
 
 
+class _FakeTwilioVerify:
+    """In-memory stand-in for Twilio's Verify service: one active code per
+    phone number at a time, overwritten by a new start_verification call."""
+
+    def __init__(self):
+        self.codes: dict[str, str] = {}
+        self.sent_to: list[str] = []
+        self._next_code = 100000
+
+    def start(self, phone_e164):
+        code = str(self._next_code)
+        self._next_code += 1
+        self.codes[phone_e164] = code
+        self.sent_to.append(phone_e164)
+
+    def check(self, phone_e164, code):
+        return self.codes.get(phone_e164) == code
+
+
 @pytest.fixture()
-def sent_emails(monkeypatch):
-    """Replaces mailer.send_email with a recorder and reports SMTP as
-    configured, so /api/register doesn't 501 in tests."""
-    calls = []
-
-    def _fake_send(to, subject, html_body):
-        calls.append({"to": to, "subject": subject, "html": html_body})
-
-    monkeypatch.setattr(mailer, "send_email", _fake_send)
-    monkeypatch.setattr(mailer, "is_configured", lambda: True)
-    return calls
+def fake_twilio(monkeypatch):
+    fake = _FakeTwilioVerify()
+    monkeypatch.setattr(smsverify, "is_configured", lambda: True)
+    monkeypatch.setattr(smsverify, "start_verification", fake.start)
+    monkeypatch.setattr(smsverify, "check_verification", fake.check)
+    return fake
 
 
 @pytest.fixture()
@@ -38,146 +55,139 @@ def client(monkeypatch):
     return TestClient(routes_module.app)
 
 
-def _extract_token(html_body: str) -> str:
-    """Pull the token= query param out of the verify-email link embedded
-    in the fake-sent email HTML."""
-    marker = "token="
-    start = html_body.index(marker) + len(marker)
-    end = start
-    while html_body[end] not in ('"', "'", "<", " ", "\n"):
-        end += 1
-    return html_body[start:end]
-
-
 @pytest.mark.unit
 class TestRegisterValidation:
-    def test_rejects_short_username(self, client, sent_emails):
-        r = client.post("/api/register", json={"username": "ab", "email": "a@b.com", "password": "longenough1"})
+    def test_rejects_short_username(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "ab", "phone": "4165550001", "password": "longenough1"})
         assert r.status_code == 400
 
-    def test_rejects_invalid_email(self, client, sent_emails):
-        r = client.post("/api/register", json={"username": "validname", "email": "not-an-email", "password": "longenough1"})
+    def test_rejects_invalid_phone(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "validname", "phone": "123", "password": "longenough1"})
         assert r.status_code == 400
 
-    def test_rejects_short_password(self, client, sent_emails):
-        r = client.post("/api/register", json={"username": "validname", "email": "a@b.com", "password": "short"})
+    def test_rejects_short_password(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "validname", "phone": "4165550001", "password": "short"})
         assert r.status_code == 400
 
-    def test_rejects_taken_username(self, client, sent_emails):
+    def test_rejects_taken_username(self, client, fake_twilio):
         r = client.post("/api/register", json={
-            "username": "admin", "email": "new@example.com", "password": "longenough1",
+            "username": "admin", "phone": "4165550002", "password": "longenough1",
         })
         assert r.status_code == 409
 
-    def test_rejects_registered_email(self, client, sent_emails):
+    def test_rejects_registered_phone(self, client, fake_twilio):
         pw_hash = users.hash_password("whatever123")
-        users.create_verified_user("existinguser", pw_hash, "taken@example.com")
-        r = client.post("/api/register", json={"username": "brandnew", "email": "taken@example.com", "password": "longenough1"})
+        users.create_verified_user("existinguser", pw_hash, "+14165550003")
+        r = client.post("/api/register", json={"username": "brandnew", "phone": "4165550003", "password": "longenough1"})
         assert r.status_code == 409
 
-    def test_501_when_mailer_not_configured(self, client, monkeypatch):
-        monkeypatch.setattr(mailer, "is_configured", lambda: False)
-        r = client.post("/api/register", json={"username": "someuser", "email": "some@example.com", "password": "longenough1"})
+    def test_501_when_twilio_not_configured(self, client, monkeypatch):
+        monkeypatch.setattr(smsverify, "is_configured", lambda: False)
+        r = client.post("/api/register", json={"username": "someuser", "phone": "4165550004", "password": "longenough1"})
         assert r.status_code == 501
+
+    def test_accepts_various_phone_input_formats(self, client, fake_twilio):
+        for i, raw in enumerate(["(416) 555-0010", "416-555-0011", "14165550012", "+1 416 555 0013"]):
+            r = client.post("/api/register", json={"username": f"fmtuser{i}", "phone": raw, "password": "longenough1"})
+            assert r.status_code == 200, raw
 
 
 @pytest.mark.unit
 class TestRegisterAndVerifyFlow:
-    def test_register_sends_a_verification_email_and_does_not_create_the_account_yet(self, client, sent_emails):
-        r = client.post("/api/register", json={"username": "pending1", "email": "pending1@example.com", "password": "longenough1"})
+    def test_register_starts_verification_and_does_not_create_the_account_yet(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "pending1", "phone": "4165551001", "password": "longenough1"})
         assert r.status_code == 200
-        assert len(sent_emails) == 1
-        assert sent_emails[0]["to"] == "pending1@example.com"
+        assert r.json()["phone"] == "+14165551001"
+        assert fake_twilio.sent_to == ["+14165551001"]
         assert users.exists("pending1") is False  # not real until verified
 
-    def test_clicking_the_verify_link_creates_the_account_grants_quota_and_logs_in(self, client, sent_emails):
-        client.post("/api/register", json={"username": "newperson", "email": "newperson@example.com", "password": "mypassword1"})
-        token = _extract_token(sent_emails[0]["html"])
+    def test_correct_code_creates_the_account_grants_quota_and_logs_in(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "newperson", "phone": "4165552001", "password": "mypassword1"})
+        code = fake_twilio.codes["+14165552001"]
 
-        r = client.get(f"/verify-email?token={token}", follow_redirects=False)
+        r = client.post("/api/register/verify-code", json={"phone": "4165552001", "code": code})
         assert r.status_code == 200
-        assert "验证成功" in r.text
         assert "ta_session" in r.cookies
 
         assert users.exists("newperson") is True
         assert users.is_admin("newperson") is False
         assert quota.get_remaining("newperson") == routes_module.NEW_USER_BONUS_QUOTA
 
-        # The auto-set session cookie actually authenticates subsequent requests.
         me = client.get("/api/me")
         assert me.status_code == 200
         assert me.json()["username"] == "newperson"
 
-    def test_the_new_account_can_log_in_with_the_chosen_password(self, client, sent_emails):
-        client.post("/api/register", json={"username": "loginlater", "email": "loginlater@example.com", "password": "secretpass1"})
-        token = _extract_token(sent_emails[0]["html"])
-        client.get(f"/verify-email?token={token}")
+    def test_wrong_code_is_rejected_and_does_not_create_the_account(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "wrongcode", "phone": "4165553001", "password": "longenough1"})
+        r = client.post("/api/register/verify-code", json={"phone": "4165553001", "code": "000000"})
+        assert r.status_code == 400
+        assert users.exists("wrongcode") is False
+
+    def test_the_new_account_can_log_in_with_the_chosen_password(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "loginlater", "phone": "4165554001", "password": "secretpass1"})
+        code = fake_twilio.codes["+14165554001"]
+        client.post("/api/register/verify-code", json={"phone": "4165554001", "code": code})
 
         r = client.post("/api/login", json={"username": "loginlater", "password": "secretpass1"})
         assert r.status_code == 200
 
-    def test_verify_email_token_is_single_use(self, client, sent_emails):
-        client.post("/api/register", json={"username": "onceonly", "email": "onceonly@example.com", "password": "longenough1"})
-        token = _extract_token(sent_emails[0]["html"])
-        client.get(f"/verify-email?token={token}")
-        r2 = client.get(f"/verify-email?token={token}")
-        assert "无效或已过期" in r2.text
+    def test_code_is_single_use(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "onceonly", "phone": "4165555001", "password": "longenough1"})
+        code = fake_twilio.codes["+14165555001"]
+        client.post("/api/register/verify-code", json={"phone": "4165555001", "code": code})
+        r2 = client.post("/api/register/verify-code", json={"phone": "4165555001", "code": code})
+        assert r2.status_code == 400
 
-    def test_invalid_token_shows_error_page(self, client):
-        r = client.get("/verify-email?token=totally-made-up")
-        assert r.status_code == 200
-        assert "无效或已过期" in r.text
+    def test_reregistering_before_verifying_invalidates_the_first_code(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "retryuser", "phone": "4165556001", "password": "firstpassword1"})
+        first_code = fake_twilio.codes["+14165556001"]
+        client.post("/api/register", json={"username": "retryuser", "phone": "4165556001", "password": "secondpassword1"})
+        second_code = fake_twilio.codes["+14165556001"]
 
-    def test_reregistering_before_verifying_invalidates_the_first_link(self, client, sent_emails):
-        client.post("/api/register", json={"username": "retryuser", "email": "retryuser@example.com", "password": "firstpassword1"})
-        first_token = _extract_token(sent_emails[0]["html"])
-        client.post("/api/register", json={"username": "retryuser", "email": "retryuser@example.com", "password": "secondpassword1"})
-        second_token = _extract_token(sent_emails[1]["html"])
+        assert first_code != second_code
+        r1 = client.post("/api/register/verify-code", json={"phone": "4165556001", "code": first_code})
+        assert r1.status_code == 400
 
-        assert first_token != second_token
-        r1 = client.get(f"/verify-email?token={first_token}")
-        assert "无效或已过期" in r1.text
-
-        r2 = client.get(f"/verify-email?token={second_token}")
-        assert "验证成功" in r2.text
+        r2 = client.post("/api/register/verify-code", json={"phone": "4165556001", "code": second_code})
+        assert r2.status_code == 200
         # The second (most recent) password is the one that ended up active.
         assert client.post("/api/login", json={"username": "retryuser", "password": "secondpassword1"}).status_code == 200
 
 
 @pytest.mark.unit
-class TestResendVerification:
-    def test_resend_reissues_a_working_token(self, client, sent_emails):
-        client.post("/api/register", json={"username": "resenduser", "email": "resend@example.com", "password": "longenough1"})
-        first_token = _extract_token(sent_emails[0]["html"])
+class TestResendCode:
+    def test_resend_triggers_a_new_twilio_send(self, client, fake_twilio):
+        client.post("/api/register", json={"username": "resenduser", "phone": "4165557001", "password": "longenough1"})
+        assert len(fake_twilio.sent_to) == 1
 
-        r = client.post("/api/register/resend", json={"identifier": "resend@example.com"})
+        r = client.post("/api/register/resend", json={"phone": "4165557001"})
         assert r.status_code == 200
-        assert len(sent_emails) == 2
-        new_token = _extract_token(sent_emails[1]["html"])
+        assert len(fake_twilio.sent_to) == 2
 
-        assert client.get(f"/verify-email?token={first_token}").text.__contains__("无效或已过期")
-        assert "验证成功" in client.get(f"/verify-email?token={new_token}").text
+        # The refreshed code from Twilio's second send still verifies successfully.
+        code = fake_twilio.codes["+14165557001"]
+        assert client.post("/api/register/verify-code", json={"phone": "4165557001", "code": code}).status_code == 200
 
-    def test_resend_for_unknown_identifier_returns_generic_ok_without_sending(self, client, sent_emails):
-        r = client.post("/api/register/resend", json={"identifier": "nobody@example.com"})
+    def test_resend_for_unknown_phone_returns_generic_ok_without_calling_twilio(self, client, fake_twilio):
+        r = client.post("/api/register/resend", json={"phone": "4165559999"})
         assert r.status_code == 200
-        assert len(sent_emails) == 0
+        assert fake_twilio.sent_to == []
 
 
 @pytest.mark.unit
 class TestRateLimiting:
-    def test_register_endpoint_429s_after_too_many_attempts_from_one_ip(self, client, sent_emails):
+    def test_register_endpoint_429s_after_too_many_attempts_from_one_ip(self, client, fake_twilio):
         for i in range(5):
-            client.post("/api/register", json={"username": f"rluser{i}", "email": f"rl{i}@example.com", "password": "longenough1"})
-        r = client.post("/api/register", json={"username": "rluserlast", "email": "rllast@example.com", "password": "longenough1"})
+            client.post("/api/register", json={"username": f"rluser{i}", "phone": f"416555800{i}", "password": "longenough1"})
+        r = client.post("/api/register", json={"username": "rluserlast", "phone": "4165558999", "password": "longenough1"})
         assert r.status_code == 429
 
 
 @pytest.mark.unit
 class TestPublicRoutesBypassAuth:
-    def test_register_page_and_api_are_reachable_without_a_session(self, client):
+    def test_register_page_is_reachable_without_a_session(self, client):
         assert client.get("/register").status_code == 200
 
-    def test_verify_email_is_reachable_without_a_session(self, client):
-        r = client.get("/verify-email?token=whatever")
-        assert r.status_code == 200
+    def test_verify_code_endpoint_is_reachable_without_a_session(self, client, fake_twilio):
+        r = client.post("/api/register/verify-code", json={"phone": "4165550000", "code": "000000"})
+        assert r.status_code in (400, 501)  # reachable at all — not 401

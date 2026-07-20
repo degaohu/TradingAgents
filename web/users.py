@@ -53,11 +53,13 @@ _HASH_ITERATIONS = 260_000
 def _migrate(conn: sqlite3.Connection) -> None:
     """Idempotent schema upgrades applied on every connect — cheap (a single
     PRAGMA) and avoids needing a separate migration-runner for a table this
-    small. Adds `email`, used by self-registration to tie an account to the
-    address it verified."""
+    small. `email` and `phone` are used by self-registration to tie an
+    account to whatever it verified (email early on, phone/SMS now)."""
     cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     if "email" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    if "phone" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
 
 
 def _connect() -> sqlite3.Connection:
@@ -143,14 +145,15 @@ def admin_usernames() -> list[str]:
 def all_users() -> list[dict]:
     """Every user with their password (plaintext for operator-managed
     accounts, hashed for self-registered ones — see is_hashed()), admin
-    flag, and email (None for accounts that predate self-registration) —
-    used by the admin panel's user table."""
+    flag, and email/phone (None for accounts that predate self-registration,
+    or that verified through the other channel) — used by the admin panel's
+    user table."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT username, password, is_admin, email FROM users ORDER BY is_admin DESC, username"
+            "SELECT username, password, is_admin, email, phone FROM users ORDER BY is_admin DESC, username"
         ).fetchall()
     return [
-        {"username": r[0], "password": r[1], "is_admin": bool(r[2]), "email": r[3]}
+        {"username": r[0], "password": r[1], "is_admin": bool(r[2]), "email": r[3], "phone": r[4]}
         for r in rows
     ]
 
@@ -160,6 +163,12 @@ def email_exists(email: str) -> bool:
         row = conn.execute(
             "SELECT 1 FROM users WHERE email = ? COLLATE NOCASE", (email,)
         ).fetchone()
+    return row is not None
+
+
+def phone_exists(phone: str) -> bool:
+    with _connect() as conn:
+        row = conn.execute("SELECT 1 FROM users WHERE phone = ?", (phone,)).fetchone()
     return row is not None
 
 
@@ -189,9 +198,10 @@ def create_user(username: str, password: str, is_admin: bool = False) -> bool:
             return False
 
 
-def create_verified_user(username: str, password_hash: str, email: str, is_admin: bool = False) -> bool:
+def create_verified_user(username: str, password_hash: str, phone: str, is_admin: bool = False) -> bool:
     """Create an account for a self-registered user who has just verified
-    their email. Returns False if the username already exists.
+    their phone number (see web/smsverify.py). Returns False if the
+    username already exists.
 
     Unlike create_user(), the password is stored exactly as given — callers
     must pass an already-hashed value (see hash_password()). Plaintext
@@ -200,13 +210,13 @@ def create_verified_user(username: str, password_hash: str, email: str, is_admin
     itself over the internet.
     """
     username = username.strip()
-    if not username or not password_hash or not email:
+    if not username or not password_hash or not phone:
         return False
     with _write_lock, _connect() as conn:
         try:
             conn.execute(
-                "INSERT INTO users (username, password, is_admin, email) VALUES (?, ?, ?, ?)",
-                (username, password_hash, 1 if is_admin else 0, email),
+                "INSERT INTO users (username, password, is_admin, phone) VALUES (?, ?, ?, ?)",
+                (username, password_hash, 1 if is_admin else 0, phone),
             )
             return True
         except sqlite3.IntegrityError:

@@ -1,4 +1,4 @@
-"""Unit tests for web/registration.py: pending email-verification storage."""
+"""Unit tests for web/registration.py: pending phone-verification storage."""
 
 from __future__ import annotations
 
@@ -11,59 +11,42 @@ from web import registration
 
 
 @pytest.mark.unit
-class TestCreateAndConsume:
-    def test_create_returns_a_usable_token(self):
-        token = registration.create("alice", "alice@example.com", "hashed-pw")
-        pending = registration.consume(token)
-        assert pending == {"username": "alice", "email": "alice@example.com", "password_hash": "hashed-pw"}
+class TestCreateGetConsume:
+    def test_create_then_get_returns_the_pending_row(self):
+        registration.create("alice", "+14165550001", "hashed-pw")
+        pending = registration.get("+14165550001")
+        assert pending == {"username": "alice", "phone": "+14165550001", "password_hash": "hashed-pw"}
+
+    def test_get_does_not_consume(self):
+        registration.create("alice", "+14165550001", "hashed-pw")
+        registration.get("+14165550001")
+        assert registration.get("+14165550001") is not None
 
     def test_consume_is_single_use(self):
-        token = registration.create("bob", "bob@example.com", "hashed-pw")
-        assert registration.consume(token) is not None
-        assert registration.consume(token) is None
+        registration.create("bob", "+14165550002", "hashed-pw")
+        assert registration.consume("+14165550002") is not None
+        assert registration.consume("+14165550002") is None
 
-    def test_consume_unknown_token_returns_none(self):
-        assert registration.consume("not-a-real-token") is None
+    def test_get_and_consume_unknown_phone_return_none(self):
+        assert registration.get("+14165559999") is None
+        assert registration.consume("+14165559999") is None
 
-    def test_expired_token_is_rejected_and_removed(self):
-        token = registration.create("carol", "carol@example.com", "hashed-pw", ttl_seconds=-1)
-        assert registration.consume(token) is None
-        # A second consume confirms the expired row was actually deleted,
-        # not just skipped this time.
-        assert registration.consume(token) is None
+    def test_expired_registration_is_rejected_and_removed(self):
+        registration.create("carol", "+14165550003", "hashed-pw", ttl_seconds=-1)
+        assert registration.get("+14165550003") is None
+        assert registration.consume("+14165550003") is None
 
-    def test_new_registration_for_same_username_invalidates_old_token(self):
-        old_token = registration.create("dave", "dave@example.com", "old-hash")
-        new_token = registration.create("dave", "dave-new@example.com", "new-hash")
-        assert registration.consume(old_token) is None
-        assert registration.consume(new_token) == {
-            "username": "dave", "email": "dave-new@example.com", "password_hash": "new-hash",
+    def test_new_registration_for_same_username_replaces_old_pending_phone(self):
+        registration.create("dave", "+14165550004", "old-hash")
+        registration.create("dave", "+14165550005", "new-hash")
+        assert registration.get("+14165550004") is None
+        assert registration.get("+14165550005") == {
+            "username": "dave", "phone": "+14165550005", "password_hash": "new-hash",
         }
 
-    def test_new_registration_for_same_email_invalidates_old_token(self):
-        old_token = registration.create("erin1", "erin@example.com", "old-hash")
-        new_token = registration.create("erin2", "erin@example.com", "new-hash")
-        assert registration.consume(old_token) is None
-        assert registration.consume(new_token) is not None
-
-
-@pytest.mark.unit
-class TestFindByIdentifier:
-    def test_finds_by_username(self):
-        registration.create("frank", "frank@example.com", "hash")
-        found = registration.find_by_identifier("frank")
-        assert found == {"username": "frank", "email": "frank@example.com", "password_hash": "hash"}
-
-    def test_finds_by_email(self):
-        registration.create("grace", "grace@example.com", "hash")
-        found = registration.find_by_identifier("grace@example.com")
-        assert found["username"] == "grace"
-
-    def test_unknown_identifier_returns_none(self):
-        assert registration.find_by_identifier("nobody-here") is None
-
-    def test_does_not_consume_the_token(self):
-        token = registration.create("heidi", "heidi@example.com", "hash")
-        registration.find_by_identifier("heidi")
-        # Still there — find_by_identifier is a peek, not a consume.
-        assert registration.consume(token) is not None
+    def test_new_registration_for_same_phone_replaces_old_pending_username(self):
+        registration.create("erin1", "+14165550006", "old-hash")
+        registration.create("erin2", "+14165550006", "new-hash")
+        assert registration.get("+14165550006") == {
+            "username": "erin2", "phone": "+14165550006", "password_hash": "new-hash",
+        }
