@@ -112,6 +112,17 @@ def _isolate_users_db(tmp_path, monkeypatch):
     monkeypatch.setattr(users, "_seeded_path", None)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_registration_db(tmp_path, monkeypatch):
+    """Redirect web/registration.py's SQLite file to a per-test temp path —
+    same reasoning as the other isolation fixtures above."""
+    try:
+        from web import registration
+    except ImportError:
+        return
+    monkeypatch.setattr(registration, "_DB_PATH", str(tmp_path / "web_pending_registrations_test.db"))
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

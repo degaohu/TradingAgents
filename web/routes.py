@@ -17,9 +17,11 @@ import contextlib
 import datetime
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -37,7 +39,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from tradingagents.default_config import DEFAULT_CONFIG  # noqa: E402
 from tradingagents.graph.trading_graph import RunCancelled, TradingAgentsGraph  # noqa: E402
 
-from . import activity, history, quota, users  # noqa: E402
+from . import activity, history, mailer, quota, registration, users  # noqa: E402
 from .decision import build_decision_summary  # noqa: E402
 from .jobs import Job, JobAlreadyRunning, JobRegistry  # noqa: E402
 from .pipeline import PipelineTracker, build_stage_specs  # noqa: E402
@@ -164,6 +166,68 @@ def _client_ip(req: Request) -> str:
     )
 
 
+# ── Self-registration ────────────────────────────────────────────────────────
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]{3,32}$")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# What a freshly-verified self-registration starts with — deliberately
+# smaller than quota.DEFAULT_QUOTA (used for admin-created accounts), since
+# this reward is meant as a trial, not a full allocation.
+NEW_USER_BONUS_QUOTA = int(os.environ.get("TRADINGAGENTS_NEW_USER_BONUS_QUOTA") or 2)
+
+# In-memory sliding-window abuse guard for registration/resend — this is a
+# single-process deployment (see JobRegistry's docstring), so an in-memory
+# dict is sufficient and resets harmlessly on restart.
+_rate_limit_lock = threading.Lock()
+_rate_limit_hits: dict[str, list[float]] = {}
+
+
+def _rate_limited(bucket: str, key: str, max_count: int, window_seconds: float) -> bool:
+    """True if `key` (an IP or email) has hit `bucket` more than `max_count`
+    times in the trailing `window_seconds`."""
+    now = time.time()
+    full_key = f"{bucket}:{key}"
+    with _rate_limit_lock:
+        hits = [t for t in _rate_limit_hits.get(full_key, []) if now - t < window_seconds]
+        hits.append(now)
+        _rate_limit_hits[full_key] = hits
+        return len(hits) > max_count
+
+
+def _public_base_url(request: Request) -> str:
+    """Base URL to build the verification link from. Prefer an explicit env
+    var — Railway (and most PaaS reverse proxies) terminate TLS in front of
+    this process, so request.url.scheme alone can't be trusted to say
+    "https"; X-Forwarded-Proto/Host are the fallback when it's unset."""
+    configured = os.environ.get("TRADINGAGENTS_PUBLIC_BASE_URL", "").rstrip("/")
+    if configured:
+        return configured
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}"
+
+
+def _verification_email_html(username: str, verify_url: str) -> str:
+    safe_username = html.escape(username)
+    return f"""
+    <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:#333;line-height:1.6;padding:20px;background-color:#f7f9fa;">
+      <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e1e4e6;border-radius:8px;
+      padding:30px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+        <h1 style="font-size:20px;margin:0 0 16px;color:#111;">■ TradingAgents 账户验证</h1>
+        <p>你好 {safe_username}，</p>
+        <p>请点击下方按钮验证邮箱并激活您的账户（验证成功后将自动获得
+        {NEW_USER_BONUS_QUOTA} 次免费分析额度）：</p>
+        <p style="text-align:center;margin:28px 0;">
+          <a href="{verify_url}" style="display:inline-block;background:#FF2D55;color:#fff;text-decoration:none;
+          padding:12px 28px;border-radius:6px;font-weight:600;">验证邮箱</a>
+        </p>
+        <p style="font-size:12px;color:#999;">如果按钮无法点击，请复制以下链接到浏览器打开：<br>{verify_url}</p>
+        <p style="font-size:12px;color:#999;">此链接 24 小时内有效。如果这不是您本人的操作，请忽略此邮件。</p>
+      </div>
+    </body></html>
+    """
+
+
 def _log_request(req: Request, status: int, username: str = "") -> None:
     """Append a slim access-log entry (non-blocking)."""
     ip = _client_ip(req)
@@ -231,9 +295,14 @@ app = FastAPI(title="TradingAgents Web Dashboard")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Always allow: login page, login POST, logout, static assets, PWA meta, heartbeat.
+    # Always allow: login page, login POST, logout, static assets, PWA meta,
+    # heartbeat, and self-registration (form, submit, email verification link,
+    # resend) — a brand new visitor has no session yet by definition.
     public = (
-        path in ("/login", "/api/login", "/api/logout", "/manifest.json", "/sw.js", "/api/heartbeat") or
+        path in (
+            "/login", "/api/login", "/api/logout", "/manifest.json", "/sw.js", "/api/heartbeat",
+            "/register", "/api/register", "/api/register/resend", "/verify-email",
+        ) or
         path.startswith("/assets/") or
         path.endswith((".js", ".css", ".ico", ".png", ".jpg", ".svg", ".woff2"))
     )
@@ -311,6 +380,125 @@ def do_logout(request: Request):
         activity.log_activity(user, "logout", ip=_client_ip(request))
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(_SESSION_COOKIE)
+    return resp
+
+
+# ── Self-registration (email-verified) ───────────────────────────────────────
+
+@app.get("/register", response_class=HTMLResponse, include_in_schema=False)
+def register_page():
+    return HTMLResponse(_REGISTER_HTML)
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+@app.post("/api/register")
+def register(req: RegisterRequest, request: Request):
+    _seed_users()
+    ip = _client_ip(request)
+    if _rate_limited("register-ip", ip, max_count=5, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="注册请求过于频繁，请稍后再试。")
+
+    username = req.username.strip().lower()
+    email = req.email.strip().lower()
+    password = req.password
+
+    if not _USERNAME_RE.match(username):
+        raise HTTPException(status_code=400, detail="用户名需为 3-32 位字母、数字、下划线或连字符。")
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="请输入有效的邮箱地址。")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="密码至少需要 8 个字符。")
+    if users.exists(username):
+        raise HTTPException(status_code=409, detail="用户名已被占用。")
+    if users.email_exists(email):
+        raise HTTPException(status_code=409, detail="该邮箱已注册，请直接登录。")
+    if _rate_limited("register-email", email, max_count=3, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="该邮箱的注册请求过于频繁，请稍后再试。")
+    if not mailer.is_configured():
+        raise HTTPException(status_code=501, detail="邮件发送服务未配置，暂时无法注册，请联系管理员。")
+
+    password_hash = users.hash_password(password)
+    token = registration.create(username, email, password_hash)
+    verify_url = f"{_public_base_url(request)}/verify-email?token={token}"
+
+    try:
+        mailer.send_email(email, "验证您的 TradingAgents 账户", _verification_email_html(username, verify_url))
+    except mailer.MailerNotConfigured:
+        raise HTTPException(status_code=501, detail="邮件发送服务未配置，暂时无法注册，请联系管理员。")
+    except Exception:
+        logger.exception("Failed to send verification email to %s", email)
+        raise HTTPException(status_code=502, detail="验证邮件发送失败，请稍后重试或使用重新发送功能。")
+
+    activity.log_activity(username, "register_pending", detail=email, ip=ip)
+    return {"ok": True, "message": "验证邮件已发送，请查收并点击链接完成注册。"}
+
+
+class ResendVerificationRequest(BaseModel):
+    identifier: str  # username or email
+
+
+@app.post("/api/register/resend")
+def resend_verification(req: ResendVerificationRequest, request: Request):
+    ip = _client_ip(request)
+    if _rate_limited("resend-ip", ip, max_count=5, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试。")
+    identifier = req.identifier.strip().lower()
+    if _rate_limited("resend-identifier", identifier, max_count=3, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试。")
+
+    generic_response = {"ok": True, "message": "如果该邮箱/用户名存在待验证的注册，验证邮件已重新发送。"}
+    pending = registration.find_by_identifier(identifier)
+    if pending is None:
+        # Don't reveal whether a pending registration exists for this identifier.
+        return generic_response
+
+    token = registration.create(pending["username"], pending["email"], pending["password_hash"])
+    verify_url = f"{_public_base_url(request)}/verify-email?token={token}"
+    try:
+        mailer.send_email(
+            pending["email"], "验证您的 TradingAgents 账户",
+            _verification_email_html(pending["username"], verify_url),
+        )
+    except Exception:
+        logger.exception("Failed to resend verification email to %s", pending["email"])
+    return generic_response
+
+
+@app.get("/verify-email", response_class=HTMLResponse, include_in_schema=False)
+def verify_email(token: str, request: Request):
+    _seed_users()
+    pending = registration.consume(token)
+    if pending is None:
+        return HTMLResponse(_verify_result_html("error", "验证链接无效或已过期，请重新注册。"))
+
+    username = pending["username"]
+    email = pending["email"]
+    password_hash = pending["password_hash"]
+
+    # Rare race: someone else claimed this username/email while the link sat
+    # unused (e.g. an admin created it manually in the meantime).
+    if users.exists(username):
+        return HTMLResponse(_verify_result_html("error", "该用户名已被占用，请使用其他用户名重新注册。"))
+    if users.email_exists(email):
+        return HTMLResponse(_verify_result_html("error", "该邮箱已注册，请直接登录。"))
+
+    users.create_verified_user(username, password_hash, email, is_admin=False)
+    quota.set_remaining(username, NEW_USER_BONUS_QUOTA)
+    activity.log_activity(username, "register_verified", detail=email, ip=_client_ip(request))
+
+    resp = HTMLResponse(_verify_result_html(
+        "success", f"验证成功！已为您自动登录，并赠送 {NEW_USER_BONUS_QUOTA} 次免费分析额度。",
+    ))
+    resp.set_cookie(
+        key=_SESSION_COOKIE, value=_make_session_token(username),
+        max_age=_SESSION_TTL,
+        httponly=True, samesite="lax", secure=False, path="/",
+    )
     return resp
 
 
@@ -418,6 +606,7 @@ def admin_status(request: Request):
     usernames = [u["username"] for u in all_users]
     admin_set = {u["username"] for u in all_users if u["is_admin"]}
     passwords = {u["username"]: u["password"] for u in all_users}
+    emails = {u["username"]: u["email"] for u in all_users}
     remaining = quota.all_remaining(usernames)
     user_summary = activity.user_activity_summary(usernames)
     for row in user_summary:
@@ -425,8 +614,13 @@ def admin_status(request: Request):
         # null quota = unlimited (admins are exempt from the report limit)
         row["quota"] = None if name in admin_set else remaining.get(name)
         # Plaintext password — shown only to admins (this endpoint is
-        # admin-gated). Deliberate operator choice; see web/users.py.
-        row["password"] = passwords.get(name)
+        # admin-gated). Deliberate operator choice; see web/users.py. Self-
+        # registered accounts are hashed instead (real passwords aren't
+        # recoverable from the DB for those) — show a placeholder instead
+        # of a raw hash string.
+        pw = passwords.get(name)
+        row["password"] = "（已加密，无法查看）" if pw and users.is_hashed(pw) else pw
+        row["email"] = emails.get(name)
 
     # Enrich recent activity with IP regions
     recent_activity = activity.recent_activity(100)
@@ -1011,24 +1205,13 @@ def send_email_report_endpoint(req: EmailReportRequest, request: Request):
             raise HTTPException(status_code=404, detail="No analysis report found for this ticker and date.")
 
     # Send the email!
-    smtp_host = os.environ.get("TRADINGAGENTS_SMTP_HOST")
-    smtp_user = os.environ.get("TRADINGAGENTS_SMTP_USER")
-    smtp_pass = os.environ.get("TRADINGAGENTS_SMTP_PASS")
-    
-    if not smtp_host or not smtp_user or not smtp_pass:
+    if not mailer.is_configured():
         raise HTTPException(
-            status_code=501, 
+            status_code=501,
             detail="邮件发送服务未配置。请联系系统管理员在服务器端配置 TRADINGAGENTS_SMTP_HOST, TRADINGAGENTS_SMTP_USER, TRADINGAGENTS_SMTP_PASS 环境变量。"
         )
 
     try:
-        import smtplib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-
-        smtp_port = int(os.environ.get("TRADINGAGENTS_SMTP_PORT", "587"))
-        smtp_from = os.environ.get("TRADINGAGENTS_SMTP_FROM") or smtp_user
-        
         # Build HTML content
         # Check if we have polished report
         polished_md = result.get("polished_markdown")
@@ -1142,27 +1325,7 @@ def send_email_report_endpoint(req: EmailReportRequest, request: Request):
         </html>
         """
 
-        # Construct Email Message
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"【TradingAgents】{req.ticker} 量化分析研报 ({req.trade_date})"
-        msg["From"] = smtp_from
-        msg["To"] = req.email
-
-        msg.attach(MIMEText(html_body, "html"))
-
-        # Send using smtplib
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10.0)
-        else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10.0)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_from, req.email, msg.as_string())
-        server.quit()
-
+        mailer.send_email(req.email, f"【TradingAgents】{req.ticker} 量化分析研报 ({req.trade_date})", html_body)
         return {"status": "success", "message": "Email sent successfully"}
     except Exception as exc:
         logger.exception("Failed to send email to %s for report %s", req.email, req.ticker)
@@ -1530,6 +1693,9 @@ _LOGIN_HTML = """<!DOCTYPE html>
   button{width:100%;margin-top:20px;background:#FF2D55;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:600;padding:11px;cursor:pointer;transition:opacity .15s}
   button:hover{opacity:.9}
   .err{color:#FF453A;font-size:13px;margin-top:12px;display:none}
+  .altlink{text-align:center;margin-top:18px;font-size:13px;color:#8B949E}
+  .altlink a{color:#FF2D55;text-decoration:none;font-weight:600}
+  .altlink a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -1545,6 +1711,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
   <label class="remember"><input id="remember" type="checkbox" checked>保持登录</label>
   <button onclick="login()">进入工作站</button>
   <div class="err" id="err">用户名或密码错误，请重试</div>
+  <div class="altlink">还没有账号？<a href="/register">立即注册</a>（新用户送 2 次免费分析）</div>
 </div>
 <script>
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
@@ -1558,6 +1725,112 @@ async function login(){
   else{const e=document.getElementById('err');e.style.display='block';}
 }
 </script>
+</body></html>"""
+
+
+_REGISTER_HTML = """<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>注册</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#101418;border:1px solid #212830;border-radius:12px;padding:36px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  h1{font-size:16px;margin-bottom:6px}
+  .sub{font-size:12px;color:#8B949E;margin-bottom:22px}
+  label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:#8B949E;display:block;margin-bottom:6px}
+  .field{margin-bottom:14px}
+  .hint{font-size:11px;color:#5c6672;margin-top:4px}
+  input[type=text],input[type=email],input[type=password]{width:100%;background:#161B22;border:1px solid #212830;border-radius:6px;color:#E6EDF3;padding:10px 12px;font-size:14px;outline:none;transition:border-color .2s}
+  input:focus{border-color:#B98029}
+  button{width:100%;margin-top:8px;background:#FF2D55;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:600;padding:11px;cursor:pointer;transition:opacity .15s}
+  button:hover{opacity:.9}
+  button:disabled{opacity:.5;cursor:default}
+  .err{color:#FF453A;font-size:13px;margin-top:12px;display:none}
+  .ok{color:#30D158;font-size:13px;margin-top:12px;display:none;line-height:1.5}
+  .altlink{text-align:center;margin-top:18px;font-size:13px;color:#8B949E}
+  .altlink a{color:#FF2D55;text-decoration:none;font-weight:600}
+  .altlink a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>创建账号</h1>
+  <div class="sub">注册即送 2 次免费分析额度，验证邮箱后自动登录。</div>
+  <div class="field">
+    <label for="un">用户名</label>
+    <input id="un" type="text" autocomplete="username" autofocus>
+    <div class="hint">3-32 位字母、数字、下划线或连字符</div>
+  </div>
+  <div class="field">
+    <label for="em">邮箱</label>
+    <input id="em" type="email" autocomplete="email">
+  </div>
+  <div class="field">
+    <label for="pw">密码</label>
+    <input id="pw" type="password" autocomplete="new-password">
+    <div class="hint">至少 8 个字符</div>
+  </div>
+  <button id="submitBtn" onclick="doRegister()">注册</button>
+  <div class="err" id="err"></div>
+  <div class="ok" id="ok"></div>
+  <div class="altlink">已有账号？<a href="/login">去登录</a></div>
+</div>
+<script>
+async function doRegister(){
+  const un=document.getElementById('un').value.trim();
+  const em=document.getElementById('em').value.trim();
+  const pw=document.getElementById('pw').value;
+  const errEl=document.getElementById('err'), okEl=document.getElementById('ok'), btn=document.getElementById('submitBtn');
+  errEl.style.display='none'; okEl.style.display='none';
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:un,email:em,password:pw})});
+    const data=await r.json();
+    if(r.ok){
+      okEl.textContent=data.message||'验证邮件已发送，请查收。';
+      okEl.style.display='block';
+    }else{
+      errEl.textContent=(data.detail)||'注册失败，请重试。';
+      errEl.style.display='block';
+      btn.disabled=false;
+    }
+  }catch(e){
+    errEl.textContent='网络错误，请重试。';
+    errEl.style.display='block';
+    btn.disabled=false;
+  }
+}
+</script>
+</body></html>"""
+
+
+def _verify_result_html(status: str, message: str) -> str:
+    color = "#30D158" if status == "success" else "#FF453A"
+    icon = "✓" if status == "success" else "✕"
+    cta = '<a href="/">进入工作站</a>' if status == "success" else '<a href="/register">重新注册</a>'
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>邮箱验证</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}}
+  .card{{background:#101418;border:1px solid #212830;border-radius:12px;padding:40px;width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6)}}
+  .icon{{font-size:40px;color:{color};margin-bottom:16px}}
+  .msg{{font-size:14px;line-height:1.6;margin-bottom:24px}}
+  a{{display:inline-block;background:#FF2D55;color:#fff;text-decoration:none;padding:11px 28px;border-radius:6px;font-weight:600;font-size:14px}}
+  a:hover{{opacity:.9}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">{icon}</div>
+  <div class="msg">{html.escape(message)}</div>
+  {cta}
+</div>
 </body></html>"""
 
 
@@ -1679,11 +1952,13 @@ const ACTION_LABELS = {
   maintenance_toggle: '切换维护模式', admin_force_cancel: '管理员强制终止任务',
   quota_adjust: '调整报告额度', password_reset: '重置密码',
   user_create: '新增用户', user_delete: '删除用户', user_role_change: '修改角色',
+  register_pending: '注册待验证', register_verified: '注册验证通过',
 };
 const ACTION_CLASS = {
-  login: 'ok', analyze_finish: 'ok', quota_adjust: 'ok', user_create: 'ok',
+  login: 'ok', analyze_finish: 'ok', quota_adjust: 'ok', user_create: 'ok', register_verified: 'ok',
   login_failed: 'err', analyze_error: 'err', admin_force_cancel: 'err', user_delete: 'err',
   analyze_cancel: 'warn', maintenance_toggle: 'warn', password_reset: 'warn', user_role_change: 'warn',
+  register_pending: 'warn',
 };
 
 function relTime(iso){
