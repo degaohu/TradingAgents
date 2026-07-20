@@ -13,9 +13,12 @@ the Twilio console, starts with "VA").
 
 from __future__ import annotations
 
+import logging
 import os
 
 import requests
+
+logger = logging.getLogger("TradingAgentsWebServer")
 
 _API_BASE = "https://verify.twilio.com/v2"
 
@@ -55,6 +58,8 @@ def start_verification(phone_e164: str) -> None:
         auth=auth,
         timeout=10.0,
     )
+    if not resp.ok:
+        logger.error("Twilio Verify start error %s: %s", resp.status_code, resp.text)
     resp.raise_for_status()
 
 
@@ -75,5 +80,7 @@ def check_verification(phone_e164: str, code: str) -> bool:
         # or already consumed) — same outcome as a wrong code from the
         # caller's perspective.
         return False
+    if not resp.ok:
+        logger.error("Twilio Verify check error %s: %s", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json().get("status") == "approved"
