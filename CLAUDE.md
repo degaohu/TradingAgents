@@ -12,6 +12,15 @@ complete this checklist — don't stop partway through:
    patch = fix/tweak, minor = new feature, major = breaking change). This is
    the single source of truth — `web/version.py` reads it at runtime and
    serves it via `GET /api/me`'s `version` field for the in-app account bar.
+   It also drives the PWA service worker's cache-busting key: `GET /sw.js`
+   is served dynamically by `web/routes.py`'s `service_worker()` (not
+   straight from `static/sw.js` on disk), which stamps the current version
+   into the `CACHE` constant at request time — so bumping this version is
+   the *only* step needed to force browsers with an old cached page (e.g.
+   a stale `/login`) to pick up the new one. (This used to be a
+   hand-maintained constant in `static/sw.js` that silently drifted out of
+   sync for releases at a time — don't reintroduce that by hardcoding it
+   again.)
 2. **Run the test suite** — `.venv/bin/python -m pytest tests/ -q` — and don't
    proceed if anything fails.
 3. **Commit** (new commit, not `--amend`, unless the user explicitly says

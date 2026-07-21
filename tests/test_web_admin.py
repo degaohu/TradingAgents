@@ -113,6 +113,27 @@ class TestVersionDisplay:
 
 
 @pytest.mark.unit
+class TestServiceWorker:
+    """GET /sw.js is served dynamically (not straight from static/) so its
+    cache-busting version can never drift out of sync with a release the
+    way a hand-maintained constant in the static file once did."""
+
+    def test_embeds_the_current_app_version_in_the_cache_key(self, raw_client):
+        from web.version import get_version
+
+        resp = raw_client.get("/sw.js")
+        assert resp.status_code == 200
+        assert f"ta-shell-v{get_version()}" in resp.text
+
+    def test_is_reachable_without_a_session(self, raw_client):
+        assert raw_client.get("/sw.js").status_code == 200
+
+    def test_served_as_javascript(self, raw_client):
+        resp = raw_client.get("/sw.js")
+        assert "javascript" in resp.headers.get("content-type", "")
+
+
+@pytest.mark.unit
 class TestWhoAmI:
     """/api/me — the client shell's account bar reads this to decide whether
     to show the admin-panel link, unlike /api/admin/status which 403s for

@@ -317,6 +317,24 @@ if _cors_origins:
 registry = JobRegistry()
 
 
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    """Serves the PWA service worker with its cache-busting version
+    auto-derived from pyproject.toml (get_version()) instead of a
+    hand-maintained constant in the static file. A hardcoded CACHE version
+    in static/sw.js drifted out of sync for releases at a time in the past
+    (a cache-first service worker then serves visitors the OLD page —
+    including old /login or /register HTML — forever, no matter how many
+    times the app redeploys) — deriving it here at request time means it
+    can never happen again. Registered ahead of the StaticFiles mount below
+    so it takes precedence over the on-disk copy for this one path."""
+    sw_path = os.path.join(_static_dir, "sw.js")
+    with open(sw_path, encoding="utf-8") as f:
+        content = f.read()
+    content = re.sub(r"const CACHE = '[^']*';", f"const CACHE = 'ta-shell-v{get_version()}';", content, count=1)
+    return Response(content=content, media_type="application/javascript")
+
+
 # ── Login / Logout ───────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse, include_in_schema=False)

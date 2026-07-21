@@ -2,7 +2,14 @@
 // always be live. We only precache the static shell so the app opens
 // instantly on repeat visits and can degrade gracefully offline (showing
 // a "no network" page rather than a chrome error).
-const CACHE = 'ta-shell-v0.4.5';
+//
+// The CACHE value below is a placeholder only relevant if this file is
+// somehow served as-is from disk. In normal operation, GET /sw.js is
+// handled by web/routes.py's service_worker(), which rewrites this line
+// to embed the current app version (from pyproject.toml) at request time
+// — so the cache key can never silently drift out of sync with a release
+// the way a hand-maintained constant here once did.
+const CACHE = 'ta-shell-vDEV';
 const SHELL = ['/', '/style.css', '/app.js', '/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
