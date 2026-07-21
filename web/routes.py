@@ -1675,14 +1675,16 @@ def ticker_search(q: str, limit: int = 15):
 # ── Inline HTML templates ────────────────────────────────────────────────────
 
 _LOGIN_HTML = """<!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>登录</title>
+<title>Log In</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
-  .card{background:#101418;border:1px solid #212830;border-radius:12px;padding:36px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .card{position:relative;background:#101418;border:1px solid #212830;border-radius:12px;padding:36px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .langbtn{position:absolute;top:16px;right:16px;background:none;border:1px solid #212830;border-radius:20px;color:#8B949E;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer;width:auto;margin:0}
+  .langbtn:hover{opacity:.8;border-color:#B98029}
   label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:#8B949E;display:block;margin-bottom:6px}
   .field{margin-bottom:14px}
   input[type=text],input[type=password]{width:100%;background:#161B22;border:1px solid #212830;border-radius:6px;color:#E6EDF3;padding:10px 12px;font-size:14px;outline:none;transition:border-color .2s}
@@ -1699,20 +1701,37 @@ _LOGIN_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
+  <button class="langbtn" id="langBtn" onclick="toggleLang()">中文</button>
   <div class="field">
-    <label for="un">用户名</label>
+    <label for="un" data-en="Username" data-zh="用户名">Username</label>
     <input id="un" type="text" autocomplete="username" autofocus>
   </div>
   <div class="field">
-    <label for="pw">密码</label>
+    <label for="pw" data-en="Password" data-zh="密码">Password</label>
     <input id="pw" type="password" autocomplete="current-password">
   </div>
-  <label class="remember"><input id="remember" type="checkbox" checked>保持登录</label>
-  <button onclick="login()">进入工作站</button>
-  <div class="err" id="err">用户名或密码错误，请重试</div>
-  <div class="altlink">还没有账号？<a href="/register">立即注册</a>（新用户送 2 次免费分析）</div>
+  <label class="remember"><input id="remember" type="checkbox" checked><span data-en="Remember me" data-zh="保持登录">Remember me</span></label>
+  <button onclick="login()" data-en="Enter Workstation" data-zh="进入工作站">Enter Workstation</button>
+  <div class="err" id="err" data-en="Incorrect username or password, please try again" data-zh="用户名或密码错误，请重试">Incorrect username or password, please try again</div>
+  <div class="altlink" data-en='Don&apos;t have an account? <a href="/register">Sign up</a> (new users get 2 free analyses)' data-zh='还没有账号？<a href="/register">立即注册</a>（新用户送 2 次免费分析）'>Don't have an account? <a href="/register">Sign up</a> (new users get 2 free analyses)</div>
 </div>
 <script>
+let lang = localStorage.getItem('tradingagents.authLang') || 'en';
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-en]').forEach(el=>{
+    const val = el.getAttribute('data-' + lang);
+    if(val !== null) el.innerHTML = val;
+  });
+  document.title = lang === 'zh' ? '登录' : 'Log In';
+  document.getElementById('langBtn').textContent = lang === 'zh' ? 'EN' : '中文';
+}
+function toggleLang(){
+  lang = lang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('tradingagents.authLang', lang);
+  applyLang();
+}
+applyLang();
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 document.getElementById('un').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('pw').focus()});
 async function login(){
@@ -1728,14 +1747,16 @@ async function login(){
 
 
 _REGISTER_HTML = """<!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>注册</title>
+<title>Sign Up</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:#080A0C;color:#E6EDF3;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
-  .card{background:#101418;border:1px solid #212830;border-radius:12px;padding:36px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .card{position:relative;background:#101418;border:1px solid #212830;border-radius:12px;padding:36px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .langbtn{position:absolute;top:16px;right:16px;background:none;border:1px solid #212830;border-radius:20px;color:#8B949E;font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer;width:auto;margin:0}
+  .langbtn:hover{opacity:.8;border-color:#B98029}
   h1{font-size:16px;margin-bottom:6px}
   .sub{font-size:12px;color:#8B949E;margin-bottom:22px}
   label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:#8B949E;display:block;margin-bottom:6px}
@@ -1757,41 +1778,88 @@ _REGISTER_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
+  <button class="langbtn" id="langBtn" onclick="toggleLang()">中文</button>
   <div id="step1">
-    <h1>创建账号</h1>
-    <div class="sub">注册即送 2 次免费分析额度，短信验证后自动登录。</div>
+    <h1 data-en="Create Account" data-zh="创建账号">Create Account</h1>
+    <div class="sub" data-en="Sign up to get 2 free analyses. You'll be logged in automatically after SMS verification." data-zh="注册即送 2 次免费分析额度，短信验证后自动登录。">Sign up to get 2 free analyses. You'll be logged in automatically after SMS verification.</div>
     <div class="field">
-      <label for="un">用户名</label>
+      <label for="un" data-en="Username" data-zh="用户名">Username</label>
       <input id="un" type="text" autocomplete="username" autofocus>
-      <div class="hint">3-32 位字母、数字、下划线或连字符</div>
+      <div class="hint" data-en="3-32 letters, numbers, underscores or hyphens" data-zh="3-32 位字母、数字、下划线或连字符">3-32 letters, numbers, underscores or hyphens</div>
     </div>
     <div class="field">
-      <label for="ph">手机号（加拿大/北美）</label>
+      <label for="ph" data-en="Phone Number (Canada/North America)" data-zh="手机号（加拿大/北美）">Phone Number (Canada/North America)</label>
       <input id="ph" type="tel" placeholder="4165550123" autocomplete="tel">
     </div>
     <div class="field">
-      <label for="pw">密码</label>
+      <label for="pw" data-en="Password" data-zh="密码">Password</label>
       <input id="pw" type="password" autocomplete="new-password">
-      <div class="hint">至少 8 个字符</div>
+      <div class="hint" data-en="At least 8 characters" data-zh="至少 8 个字符">At least 8 characters</div>
     </div>
-    <button id="submitBtn" onclick="doRegister()">发送验证码</button>
+    <button id="submitBtn" onclick="doRegister()" data-en="Send Code" data-zh="发送验证码">Send Code</button>
     <div class="err" id="err1"></div>
-    <div class="altlink">已有账号？<a href="/login">去登录</a></div>
+    <div class="altlink" data-en='Already have an account? <a href="/login">Log in</a>' data-zh='已有账号？<a href="/login">去登录</a>'>Already have an account? <a href="/login">Log in</a></div>
   </div>
   <div id="step2">
-    <h1>输入验证码</h1>
+    <h1 data-en="Enter Verification Code" data-zh="输入验证码">Enter Verification Code</h1>
     <div class="sub" id="sentTo"></div>
     <div class="field">
-      <label for="code">短信验证码</label>
+      <label for="code" data-en="SMS Code" data-zh="短信验证码">SMS Code</label>
       <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code">
     </div>
-    <button id="verifyBtn" onclick="doVerify()">验证并登录</button>
-    <a class="linkbtn" onclick="doResend()">没收到？重新发送</a>
+    <button id="verifyBtn" onclick="doVerify()" data-en="Verify &amp; Log In" data-zh="验证并登录">Verify &amp; Log In</button>
+    <a class="linkbtn" onclick="doResend()" data-en="Didn't receive it? Resend" data-zh="没收到？重新发送">Didn't receive it? Resend</a>
     <div class="err" id="err2"></div>
     <div class="ok" id="ok2"></div>
   </div>
 </div>
 <script>
+let lang = localStorage.getItem('tradingagents.authLang') || 'en';
+
+// The server only returns Chinese messages (see web/routes.py) - this maps
+// the fixed, known set of them to English so the page reads consistently
+// in whichever language is selected, without needing server-side i18n.
+const SERVER_MSG_EN = {
+  '注册请求过于频繁，请稍后再试。': 'Too many registration attempts. Please try again later.',
+  '用户名需为 3-32 位字母、数字、下划线或连字符。': 'Username must be 3-32 letters, numbers, underscores or hyphens.',
+  '请输入有效的北美手机号（10 位数字）。': 'Please enter a valid North American phone number (10 digits).',
+  '密码至少需要 8 个字符。': 'Password must be at least 8 characters.',
+  '用户名已被占用。': 'That username is already taken.',
+  '该手机号已注册，请直接登录。': 'This phone number is already registered. Please log in instead.',
+  '该手机号的注册请求过于频繁，请稍后再试。': 'Too many registration attempts for this phone number. Please try again later.',
+  '短信验证服务未配置，暂时无法注册，请联系管理员。': 'SMS verification service is not configured yet. Please contact the administrator.',
+  '验证码发送失败，请稍后重试。': 'Failed to send the verification code. Please try again later.',
+  '请求过于频繁，请稍后再试。': 'Too many requests. Please try again later.',
+  '手机号格式不正确。': 'Invalid phone number format.',
+  '验证码校验失败，请稍后重试。': 'Failed to verify the code. Please try again later.',
+  '验证码错误或已过期。': 'Incorrect or expired verification code.',
+  '注册信息已过期，请重新注册。': 'Your registration has expired. Please register again.',
+  '该用户名已被占用，请使用其他用户名重新注册。': 'That username was just taken. Please register again with a different username.',
+  '如果该手机号存在待验证的注册，验证码已重新发送。': 'If a pending registration exists for this phone number, the code has been resent.',
+};
+function translateMsg(zhMsg){
+  if(lang !== 'en' || !zhMsg) return zhMsg;
+  const bonusMatch = zhMsg.match(/^验证成功！已赠送 (\\d+) 次免费分析额度。$/);
+  if(bonusMatch) return `Verified! You've been granted ${bonusMatch[1]} free analyses.`;
+  return SERVER_MSG_EN[zhMsg] || zhMsg;
+}
+
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-en]').forEach(el=>{
+    const val = el.getAttribute('data-' + lang);
+    if(val !== null) el.innerHTML = val;
+  });
+  document.title = lang === 'zh' ? '注册' : 'Sign Up';
+  document.getElementById('langBtn').textContent = lang === 'zh' ? 'EN' : '中文';
+}
+function toggleLang(){
+  lang = lang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('tradingagents.authLang', lang);
+  applyLang();
+}
+applyLang();
+
 let currentPhone = '';
 async function doRegister(){
   const un=document.getElementById('un').value.trim();
@@ -1805,16 +1873,16 @@ async function doRegister(){
     const data=await r.json();
     if(r.ok){
       currentPhone = data.phone || ph;
-      document.getElementById('sentTo').textContent = '验证码已发送至 ' + currentPhone;
+      document.getElementById('sentTo').textContent = (lang==='en' ? 'A verification code has been sent to ' : '验证码已发送至 ') + currentPhone;
       document.getElementById('step1').style.display='none';
       document.getElementById('step2').style.display='block';
     }else{
-      errEl.textContent=(data.detail)||'注册失败，请重试。';
+      errEl.textContent=translateMsg(data.detail)||(lang==='en'?'Registration failed, please try again.':'注册失败，请重试。');
       errEl.style.display='block';
       btn.disabled=false;
     }
   }catch(e){
-    errEl.textContent='网络错误，请重试。';
+    errEl.textContent=lang==='en'?'Network error, please try again.':'网络错误，请重试。';
     errEl.style.display='block';
     btn.disabled=false;
   }
@@ -1828,16 +1896,16 @@ async function doVerify(){
     const r=await fetch('/api/register/verify-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:currentPhone,code:code})});
     const data=await r.json();
     if(r.ok){
-      okEl.textContent=data.message||'验证成功！';
+      okEl.textContent=translateMsg(data.message)||(lang==='en'?'Verified!':'验证成功！');
       okEl.style.display='block';
       setTimeout(()=>{location.href='/';}, 800);
     }else{
-      errEl.textContent=(data.detail)||'验证码错误，请重试。';
+      errEl.textContent=translateMsg(data.detail)||(lang==='en'?'Incorrect code, please try again.':'验证码错误，请重试。');
       errEl.style.display='block';
       btn.disabled=false;
     }
   }catch(e){
-    errEl.textContent='网络错误，请重试。';
+    errEl.textContent=lang==='en'?'Network error, please try again.':'网络错误，请重试。';
     errEl.style.display='block';
     btn.disabled=false;
   }
@@ -1848,10 +1916,10 @@ async function doResend(){
   try{
     const r=await fetch('/api/register/resend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:currentPhone})});
     const data=await r.json();
-    okEl.textContent=data.message||'验证码已重新发送。';
+    okEl.textContent=translateMsg(data.message)||(lang==='en'?'Verification code resent.':'验证码已重新发送。');
     okEl.style.display='block';
   }catch(e){
-    errEl.textContent='网络错误，请重试。';
+    errEl.textContent=lang==='en'?'Network error, please try again.':'网络错误，请重试。';
     errEl.style.display='block';
   }
 }
