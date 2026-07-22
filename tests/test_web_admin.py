@@ -132,6 +132,18 @@ class TestServiceWorker:
         resp = raw_client.get("/sw.js")
         assert "javascript" in resp.headers.get("content-type", "")
 
+    def test_root_path_is_never_precached_or_cache_matched(self, raw_client):
+        """'/' varies entirely by auth state (dashboard shell vs a 302 to
+        /login) - precaching or cache-matching it once caused a real bug:
+        a service-worker install that ran while logged out would cache the
+        logged-out response, then keep serving it forever after a
+        successful login, making the app look broken. Both the precache
+        list and the fetch handler must keep excluding it."""
+        text = raw_client.get("/sw.js").text
+        shell_line = next(line for line in text.splitlines() if line.strip().startswith("const SHELL"))
+        assert "'/'" not in shell_line and '"/"' not in shell_line
+        assert "pathname === '/'" in text or 'pathname === "/"' in text
+
 
 @pytest.mark.unit
 class TestWhoAmI:

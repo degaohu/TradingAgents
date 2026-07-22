@@ -10,7 +10,14 @@
 // — so the cache key can never silently drift out of sync with a release
 // the way a hand-maintained constant here once did.
 const CACHE = 'ta-shell-vDEV';
-const SHELL = ['/', '/style.css', '/app.js', '/icon.svg', '/manifest.json'];
+// '/' is deliberately NOT in this list (see the fetch handler below) — its
+// response depends entirely on auth state (the dashboard shell if logged
+// in, a 302 to /login otherwise), so caching it is unsafe: if the SW's
+// install/precache ever runs while logged out, it would cache the
+// logged-out response and then keep serving it after a successful login,
+// making the app look broken until the cache is manually cleared. Static,
+// auth-independent assets are fine to precache.
+const SHELL = ['/style.css', '/app.js', '/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -24,8 +31,10 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Never intercept API, SSE or POST — those are dynamic.
-  if (url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;
+  // Never intercept API, SSE or POST — those are dynamic. Never intercept
+  // '/' either — its content is auth-state-dependent (see the SHELL
+  // comment above), so it must always go to the network, never a cache.
+  if (url.pathname.startsWith('/api/') || url.pathname === '/' || e.request.method !== 'GET') return;
   e.respondWith(
     caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
       // Cache only same-origin GETs with a 200 response.
