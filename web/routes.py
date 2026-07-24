@@ -166,7 +166,12 @@ def _client_ip(req: Request) -> str:
 
 
 # ── Self-registration ────────────────────────────────────────────────────────
-_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]{3,32}$")
+# Deliberately permissive (any script/spaces/punctuation is fine, including
+# Chinese) - only blocks what would actually break something: '/' and '\'
+# (username appears as a raw path segment in /api/admin/users/{username}
+# routes) and control characters (embedded newlines etc. in logs/display).
+# HTML display is already safe regardless, via the admin panel's esc().
+_USERNAME_RE = re.compile(r"^[^/\\\x00-\x1f]{1,32}$")
 # What a freshly-verified self-registration starts with — deliberately
 # smaller than quota.DEFAULT_QUOTA (used for admin-created accounts), since
 # this reward is meant as a trial, not a full allocation.
@@ -401,7 +406,7 @@ def register(req: RegisterRequest, request: Request):
     password = req.password
 
     if not _USERNAME_RE.match(username):
-        raise HTTPException(status_code=400, detail="用户名需为 3-32 位字母、数字、下划线或连字符。")
+        raise HTTPException(status_code=400, detail="用户名需为 1-32 个字符，且不能包含斜杠、反斜杠或换行等符号。")
     if phone is None:
         raise HTTPException(status_code=400, detail="请输入有效的北美手机号（10 位数字）。")
     if len(password) < 8:
@@ -1803,7 +1808,7 @@ _REGISTER_HTML = """<!DOCTYPE html>
     <div class="field">
       <label for="un" data-en="Username" data-zh="用户名">Username</label>
       <input id="un" type="text" autocomplete="username" autofocus>
-      <div class="hint" data-en="3-32 letters, numbers, underscores or hyphens" data-zh="3-32 位字母、数字、下划线或连字符">3-32 letters, numbers, underscores or hyphens</div>
+      <div class="hint" data-en="1-32 characters (no slashes or line breaks)" data-zh="1-32 个字符（不能包含斜杠或换行）">1-32 characters (no slashes or line breaks)</div>
     </div>
     <div class="field">
       <label for="ph" data-en="Phone Number (Canada/North America)" data-zh="手机号（加拿大/北美）">Phone Number (Canada/North America)</label>
@@ -1839,7 +1844,7 @@ let lang = localStorage.getItem('tradingagents.authLang') || 'en';
 // in whichever language is selected, without needing server-side i18n.
 const SERVER_MSG_EN = {
   '注册请求过于频繁，请稍后再试。': 'Too many registration attempts. Please try again later.',
-  '用户名需为 3-32 位字母、数字、下划线或连字符。': 'Username must be 3-32 letters, numbers, underscores or hyphens.',
+  '用户名需为 1-32 个字符，且不能包含斜杠、反斜杠或换行等符号。': 'Username must be 1-32 characters, and cannot contain slashes, backslashes, or line breaks.',
   '请输入有效的北美手机号（10 位数字）。': 'Please enter a valid North American phone number (10 digits).',
   '密码至少需要 8 个字符。': 'Password must be at least 8 characters.',
   '用户名已被占用。': 'That username is already taken.',

@@ -57,9 +57,27 @@ def client(monkeypatch):
 
 @pytest.mark.unit
 class TestRegisterValidation:
-    def test_rejects_short_username(self, client, fake_twilio):
-        r = client.post("/api/register", json={"username": "ab", "phone": "4165550001", "password": "longenough1"})
+    def test_rejects_empty_username(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "   ", "phone": "4165550001", "password": "longenough1"})
         assert r.status_code == 400
+
+    def test_rejects_username_over_32_chars(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "a" * 33, "phone": "4165550001", "password": "longenough1"})
+        assert r.status_code == 400
+
+    def test_rejects_username_with_slash_or_backslash(self, client, fake_twilio):
+        for bad in ["a/b", "a\\b"]:
+            r = client.post("/api/register", json={"username": bad, "phone": "4165550001", "password": "longenough1"})
+            assert r.status_code == 400, bad
+
+    def test_rejects_username_with_control_characters(self, client, fake_twilio):
+        r = client.post("/api/register", json={"username": "a\nb", "phone": "4165550001", "password": "longenough1"})
+        assert r.status_code == 400
+
+    def test_accepts_short_and_unicode_usernames(self, client, fake_twilio):
+        for i, name in enumerate(["ab", "李雷", "user.name", "user name", "a"]):
+            r = client.post("/api/register", json={"username": name, "phone": f"416555002{i}", "password": "longenough1"})
+            assert r.status_code == 200, name
 
     def test_rejects_invalid_phone(self, client, fake_twilio):
         r = client.post("/api/register", json={"username": "validname", "phone": "123", "password": "longenough1"})
